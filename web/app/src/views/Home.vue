@@ -26,6 +26,7 @@
         <AnnouncementBanner :announcements="activeAnnouncements" />
         <!-- Search bar -->
         <SearchBar
+          v-if="!hideControls"
           @search="handleSearch"
           @update:showOnlyFailing="showOnlyFailing = $event"
           @update:showRecentFailures="showRecentFailures = $event"
@@ -35,9 +36,8 @@
         />
       </div>
 
-      <div v-if="loading" class="flex items-center justify-center py-20">
-        <Loading size="lg" />
-      </div>
+      <!-- first load: no second spinner (App shows one), no false empty-state flash -->
+      <div v-if="loading" class="py-20"></div>
 
       <div v-else-if="filteredEndpoints.length === 0 && filteredSuites.length === 0" class="text-center py-20">
         <AlertCircle class="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -182,14 +182,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { Activity, Timer, RefreshCw, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, CheckCircle } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import EndpointCard from '@/components/EndpointCard.vue'
 import SuiteCard from '@/components/SuiteCard.vue'
 import SearchBar from '@/components/SearchBar.vue'
 import Settings from '@/components/Settings.vue'
-import Loading from '@/components/Loading.vue'
 import AnnouncementBanner from '@/components/AnnouncementBanner.vue'
 import PastAnnouncements from '@/components/PastAnnouncements.vue'
 
@@ -220,8 +219,13 @@ const searchQuery = ref('')
 const showOnlyFailing = ref(false)
 const showRecentFailures = ref(false)
 const showAverageResponseTime = ref(localStorage.getItem('gatus:show-average-response-time') !== 'false')
-const groupByGroup = ref(false)
-const sortBy = ref(localStorage.getItem('gatus:sort-by') || 'name')
+// default-sort-by from config (guarded against the dev-mode placeholder)
+const configuredSortBy = window.config && window.config.defaultSortBy && window.config.defaultSortBy !== '{{ .UI.DefaultSortBy }}' ? window.config.defaultSortBy : 'name'
+const initialSortBy = localStorage.getItem('gatus:sort-by') || configuredSortBy
+const sortBy = ref(initialSortBy)
+const groupByGroup = ref(initialSortBy === 'group')
+const hideControls = computed(() => !!(window.config && window.config.hideControls === true))
+const defaultExpanded = computed(() => !!(window.config && window.config.defaultExpanded === true))
 const uncollapsedGroups = ref(new Set())
 const resultPageSize = 50
 
@@ -385,6 +389,22 @@ const combinedGroups = computed(() => {
   return result
 })
 
+// default-expanded: open all groups once (after first fetch), unless the visitor already has a saved choice
+let seededExpandedGroups = false
+watch(combinedGroups, (groups) => {
+  if (seededExpandedGroups || !defaultExpanded.value || !groups) return
+  const names = Object.keys(groups)
+  if (names.length === 0) return
+  seededExpandedGroups = true
+  let hasSavedChoice = false
+  try {
+    hasSavedChoice = !!localStorage.getItem('gatus:uncollapsed-groups')
+  } catch (e) { /* storage blocked (private mode) — treat as no saved choice */ }
+  if (!hasSavedChoice) {
+    uncollapsedGroups.value = new Set(names)
+  }
+})
+
 const paginatedEndpoints = computed(() => {
   if (groupByGroup.value) {
     // When grouping, we don't paginate
@@ -541,6 +561,10 @@ const dashboardSubheading = computed(() => {
 })
 
 onMounted(() => {
+  // The SearchBar seeds collapsed groups on mount; when it's hidden, do it here.
+  if (hideControls.value) {
+    initializeCollapsedGroups()
+  }
   fetchData()
 })
 </script>

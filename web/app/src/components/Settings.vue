@@ -68,7 +68,9 @@ const REFRESH_INTERVALS = [
   { value: '300', label: '5m' },
   { value: '600', label: '10m' }
 ]
-const DEFAULT_REFRESH_INTERVAL = '300'
+// Initial refresh from ui.default-refresh-interval if it's a valid option, else 5m
+const configuredRefreshInterval = String((window.config && window.config.defaultRefreshInterval) || '')
+const DEFAULT_REFRESH_INTERVAL = REFRESH_INTERVALS.some(i => i.value === configuredRefreshInterval) ? configuredRefreshInterval : '300'
 const THEME_COOKIE_NAME = 'theme'
 const THEME_COOKIE_MAX_AGE = 31536000 // 1 year
 const STORAGE_KEYS = {

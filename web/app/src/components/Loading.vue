@@ -1,18 +1,25 @@
 <template>
   <div class="flex justify-center items-center">
-    <img 
+    <img
       :class="[
-        'animate-spin rounded-full opacity-60 grayscale',
+        'animate-spin rounded-full opacity-60',
         sizeClass,
       ]"
-      src="../assets/logo.svg" 
-      alt="Gatus logo" 
+      :src="logoSrc"
+      alt=""
     />
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
+import bundledLogo from '../assets/logo.svg'
+
+// Spinner renders before /api/v1/config loads, so use the server-injected logo (bundled is the fallback)
+const logoSrc = computed(() => {
+  const configured = window.config && window.config.logo
+  return configured && configured !== '{{ .UI.Logo }}' ? configured : bundledLogo
+})
 
 const props = defineProps({
   size: {

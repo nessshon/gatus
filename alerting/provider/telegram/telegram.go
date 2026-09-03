@@ -5,18 +5,37 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/TwiN/gatus/v5/alerting/alert"
 	"github.com/TwiN/gatus/v5/client"
 	"github.com/TwiN/gatus/v5/config/endpoint"
+	"github.com/TwiN/logr"
 	"gopkg.in/yaml.v3"
 )
 
 const ApiURL = "https://api.telegram.org"
+
+// Default premium emoji ids for custom-emoji mode; bots without access fall back to the plain 🔴/🟢
+const (
+	defaultTriggeredEmojiID = "5240431636713065543"
+	defaultResolvedEmojiID  = "5240378276039379068"
+)
+
+// Telegram allows a bot about 30 messages per second
+const (
+	sendInterval = time.Second / 30
+	maxRetries   = 7
+	maxBackoff   = 30 * time.Second
+)
+
+// 403: the chat blocked the bot, a retry can't succeed
+var errForbidden = errors.New("telegram: chat forbade the bot")
 
 var (
 	ErrTokenNotSet            = errors.New("token not set")
@@ -29,6 +48,12 @@ type Config struct {
 	ID      string `yaml:"id"`
 	TopicID string `yaml:"topic-id,omitempty"`
 	ApiUrl  string `yaml:"api-url"`
+
+	// CustomEmoji enables premium <tg-emoji> icons; default false uses plain 🔴/🟢
+	CustomEmoji bool `yaml:"custom-emoji,omitempty"`
+	// TriggeredEmojiID / ResolvedEmojiID override the premium ids (only with CustomEmoji)
+	TriggeredEmojiID string `yaml:"triggered-emoji-id,omitempty"`
+	ResolvedEmojiID  string `yaml:"resolved-emoji-id,omitempty"`
 
 	ClientConfig *client.Config `yaml:"client,omitempty"`
 }
@@ -61,6 +86,15 @@ func (cfg *Config) Merge(override *Config) {
 	}
 	if len(override.ApiUrl) > 0 {
 		cfg.ApiUrl = override.ApiUrl
+	}
+	if override.CustomEmoji {
+		cfg.CustomEmoji = true
+	}
+	if len(override.TriggeredEmojiID) > 0 {
+		cfg.TriggeredEmojiID = override.TriggeredEmojiID
+	}
+	if len(override.ResolvedEmojiID) > 0 {
+		cfg.ResolvedEmojiID = override.ResolvedEmojiID
 	}
 }
 
@@ -95,28 +129,101 @@ func (provider *AlertProvider) Validate() error {
 	return provider.DefaultConfig.Validate()
 }
 
-// Send an alert using the provider
+// Send fails only if every recipient failed with something other than 403
 func (provider *AlertProvider) Send(ep *endpoint.Endpoint, alert *alert.Alert, result *endpoint.Result, resolved bool) error {
 	cfg, err := provider.GetConfig(ep.Group, alert)
 	if err != nil {
 		return err
 	}
-	buffer := bytes.NewBuffer(provider.buildRequestBody(cfg, ep, alert, result, resolved))
-	request, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/bot%s/sendMessage", cfg.ApiUrl, cfg.Token), buffer)
-	if err != nil {
-		return err
+	text := buildMessageText(cfg, ep, alert, result, resolved)
+	httpClient := client.GetHTTPClient(cfg.ClientConfig)
+	url := fmt.Sprintf("%s/bot%s/sendMessage", cfg.ApiUrl, cfg.Token)
+	ids := splitIDs(cfg.ID)
+	var lastErr error
+	anyDelivered := false
+	for i, chatID := range ids {
+		bodyAsJSON, _ := json.Marshal(Body{
+			ChatID:                chatID,
+			Text:                  text,
+			ParseMode:             "HTML",
+			DisableWebPagePreview: true,
+			TopicID:               cfg.TopicID,
+		})
+		if sendErr := sendToChat(httpClient, url, cfg.Token, chatID, bodyAsJSON); sendErr != nil {
+			if !errors.Is(sendErr, errForbidden) {
+				lastErr = sendErr
+			}
+			logr.Warnf("[telegram.Send] chat=%s: %s", chatID, sendErr.Error())
+		} else {
+			anyDelivered = true
+		}
+		if i < len(ids)-1 {
+			time.Sleep(sendInterval)
+		}
 	}
-	request.Header.Set("Content-Type", "application/json")
-	response, err := client.GetHTTPClient(cfg.ClientConfig).Do(request)
-	if err != nil {
-		return redactTokenFromError(err, cfg.Token)
+	if anyDelivered {
+		return nil
 	}
-	defer response.Body.Close()
-	if response.StatusCode > 399 {
+	return lastErr
+}
+
+func sendToChat(httpClient *http.Client, url, token, chatID string, bodyAsJSON []byte) error {
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		request, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(bodyAsJSON))
+		if err != nil {
+			return redactTokenFromError(err, token)
+		}
+		request.Header.Set("Content-Type", "application/json")
+		response, err := httpClient.Do(request)
+		if err != nil {
+			time.Sleep(backoff(attempt))
+			continue
+		}
 		body, _ := io.ReadAll(response.Body)
-		return fmt.Errorf("call to provider alert returned status code %d: %s", response.StatusCode, string(body))
+		response.Body.Close()
+		if response.StatusCode < 400 {
+			return nil
+		}
+		switch {
+		case response.StatusCode == http.StatusTooManyRequests:
+			time.Sleep(retryAfter(body))
+		case response.StatusCode == http.StatusForbidden:
+			return errForbidden
+		case response.StatusCode >= 500:
+			time.Sleep(backoff(attempt))
+		default:
+			return fmt.Errorf("call to provider alert returned status code %d: %s", response.StatusCode, string(body))
+		}
 	}
-	return err
+	return fmt.Errorf("call to provider alert for chat %s exhausted %d retries", chatID, maxRetries)
+}
+
+func backoff(attempt int) time.Duration {
+	return min(time.Duration(1<<attempt)*time.Second, maxBackoff)
+}
+
+// retryAfter parses {"parameters":{"retry_after":N}} from a 429 body.
+func retryAfter(body []byte) time.Duration {
+	var parsed struct {
+		Parameters struct {
+			RetryAfter int `json:"retry_after"`
+		} `json:"parameters"`
+	}
+	if err := json.Unmarshal(body, &parsed); err == nil && parsed.Parameters.RetryAfter > 0 {
+		return min(time.Duration(parsed.Parameters.RetryAfter)*time.Second, maxBackoff)
+	}
+	return time.Second
+}
+
+func splitIDs(raw string) []string {
+	parts := strings.Split(raw, ",")
+	ids := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			ids = append(ids, p)
+		}
+	}
+	return ids
 }
 
 // redactTokenFromError replaces the bot token in a *url.Error's URL (and its
@@ -134,46 +241,76 @@ func redactTokenFromError(err error, token string) error {
 }
 
 type Body struct {
-	ChatID    string `json:"chat_id"`
-	Text      string `json:"text"`
-	ParseMode string `json:"parse_mode"`
-	TopicID   string `json:"message_thread_id,omitempty"`
+	ChatID                string `json:"chat_id"`
+	Text                  string `json:"text"`
+	ParseMode             string `json:"parse_mode"`
+	DisableWebPagePreview bool   `json:"disable_web_page_preview"`
+	TopicID               string `json:"message_thread_id,omitempty"`
 }
 
-// buildRequestBody builds the request body for the provider
-func (provider *AlertProvider) buildRequestBody(cfg *Config, ep *endpoint.Endpoint, alert *alert.Alert, result *endpoint.Result, resolved bool) []byte {
-	var message string
-	if resolved {
-		message = fmt.Sprintf("An alert for *%s* has been resolved:\n—\n    _healthcheck passing successfully %d time(s) in a row_\n—  ", ep.DisplayName(), alert.SuccessThreshold)
-	} else {
-		message = fmt.Sprintf("An alert for *%s* has been triggered:\n—\n    _healthcheck failed %d time(s) in a row_\n—  ", ep.DisplayName(), alert.FailureThreshold)
+// Values are escaped: a stray < or & makes Telegram reject the whole HTML message
+func buildMessageText(cfg *Config, ep *endpoint.Endpoint, alert *alert.Alert, result *endpoint.Result, resolved bool) string {
+	var b strings.Builder
+	b.WriteString(statusEmoji(cfg, resolved))
+	b.WriteString(" ")
+	if ep.Group != "" {
+		b.WriteString("<b>")
+		b.WriteString(html.EscapeString(ep.Group))
+		b.WriteString("</b> / ")
 	}
-	var formattedConditionResults string
-	if len(result.ConditionResults) > 0 {
-		formattedConditionResults = "\n*Condition results*\n"
-		for _, conditionResult := range result.ConditionResults {
-			var prefix string
-			if conditionResult.Success {
-				prefix = "✅"
-			} else {
-				prefix = "❌"
+	if ep.URL != "" {
+		b.WriteString(`<a href="`)
+		b.WriteString(html.EscapeString(ep.URL))
+		b.WriteString(`">`)
+		b.WriteString(html.EscapeString(ep.Name))
+		b.WriteString(`</a>`)
+	} else {
+		b.WriteString("<b>")
+		b.WriteString(html.EscapeString(ep.Name))
+		b.WriteString("</b>")
+	}
+	b.WriteString("\n\n<i>")
+	if resolved {
+		b.WriteString(fmt.Sprintf("healthcheck passing %d time(s) in a row", alert.SuccessThreshold))
+	} else {
+		b.WriteString(fmt.Sprintf("healthcheck failed %d time(s) in a row", alert.FailureThreshold))
+	}
+	b.WriteString("</i>")
+	if !resolved {
+		var failed []*endpoint.ConditionResult
+		for _, cr := range result.ConditionResults {
+			if !cr.Success {
+				failed = append(failed, cr)
 			}
-			formattedConditionResults += fmt.Sprintf("%s - `%s`\n", prefix, conditionResult.Condition)
+		}
+		if len(failed) > 0 {
+			b.WriteString("\n\n<b>Condition results:</b>")
+			for _, cr := range failed {
+				b.WriteString("\n• <code>")
+				b.WriteString(html.EscapeString(cr.Condition))
+				b.WriteString("</code>")
+			}
 		}
 	}
-	var text string
-	if len(alert.GetDescription()) > 0 {
-		text = fmt.Sprintf("⛑ *Gatus* \n%s \n*Description* \n%s  \n%s", message, alert.GetDescription(), formattedConditionResults)
-	} else {
-		text = fmt.Sprintf("⛑ *Gatus* \n%s%s", message, formattedConditionResults)
+	return b.String()
+}
+
+func statusEmoji(cfg *Config, resolved bool) string {
+	fallback, id := "🔴", emojiID(cfg.TriggeredEmojiID, defaultTriggeredEmojiID)
+	if resolved {
+		fallback, id = "🟢", emojiID(cfg.ResolvedEmojiID, defaultResolvedEmojiID)
 	}
-	bodyAsJSON, _ := json.Marshal(Body{
-		ChatID:    cfg.ID,
-		Text:      text,
-		ParseMode: "MARKDOWN",
-		TopicID:   cfg.TopicID,
-	})
-	return bodyAsJSON
+	if cfg.CustomEmoji {
+		return fmt.Sprintf("<tg-emoji emoji-id='%s'>%s</tg-emoji>", id, fallback)
+	}
+	return fallback
+}
+
+func emojiID(configured, fallback string) string {
+	if configured != "" {
+		return configured
+	}
+	return fallback
 }
 
 // GetDefaultAlert returns the provider's default alert configuration

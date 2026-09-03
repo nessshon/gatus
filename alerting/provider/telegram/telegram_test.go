@@ -3,7 +3,6 @@ package telegram
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -74,7 +73,8 @@ func TestAlertProvider_Send(t *testing.T) {
 			Alert:    alert.Alert{Description: &firstDescription, SuccessThreshold: 5, FailureThreshold: 3},
 			Resolved: false,
 			MockRoundTripper: test.MockRoundTripper(func(r *http.Request) *http.Response {
-				return &http.Response{StatusCode: http.StatusInternalServerError, Body: http.NoBody}
+				// 400 isn't retried, a 5xx would wait out the ~90s backoff
+				return &http.Response{StatusCode: http.StatusBadRequest, Body: http.NoBody}
 			}),
 			ExpectedError: true,
 		},
@@ -94,7 +94,8 @@ func TestAlertProvider_Send(t *testing.T) {
 			Alert:    alert.Alert{Description: &secondDescription, SuccessThreshold: 5, FailureThreshold: 3},
 			Resolved: true,
 			MockRoundTripper: test.MockRoundTripper(func(r *http.Request) *http.Response {
-				return &http.Response{StatusCode: http.StatusInternalServerError, Body: http.NoBody}
+				// 400 isn't retried, a 5xx would wait out the ~90s backoff
+				return &http.Response{StatusCode: http.StatusBadRequest, Body: http.NoBody}
 			}),
 			ExpectedError: true,
 		},
@@ -123,73 +124,77 @@ func TestAlertProvider_Send(t *testing.T) {
 	}
 }
 
-func TestAlertProvider_buildRequestBody(t *testing.T) {
-	firstDescription := "description-1"
-	secondDescription := "description-2"
-	descriptionWithLink := "[link](https://example.org/)"
+func TestAlertProvider_buildMessageText(t *testing.T) {
 	scenarios := []struct {
 		Name         string
-		Provider     AlertProvider
+		Config       Config
+		Endpoint     endpoint.Endpoint
 		Alert        alert.Alert
-		NoConditions bool
+		Conditions   []*endpoint.ConditionResult
 		Resolved     bool
-		ExpectedBody string
+		ExpectedText string
 	}{
 		{
-			Name:         "triggered",
-			Provider:     AlertProvider{DefaultConfig: Config{ID: "123"}},
-			Alert:        alert.Alert{Description: &firstDescription, SuccessThreshold: 5, FailureThreshold: 3},
+			Name:     "triggered: linked name, bold group, healthcheck line, bulleted failed conditions",
+			Config:   Config{ID: "123"},
+			Endpoint: endpoint.Endpoint{Name: "backend", Group: "core", URL: "https://example.org/health"},
+			Alert:    alert.Alert{FailureThreshold: 3, SuccessThreshold: 2},
+			Conditions: []*endpoint.ConditionResult{
+				{Condition: "[STATUS] (503) == 200", Success: false},
+				{Condition: "[BODY].status (down) == ok", Success: false},
+			},
 			Resolved:     false,
-			ExpectedBody: "{\"chat_id\":\"123\",\"text\":\"⛑ *Gatus* \\nAn alert for *endpoint-name* has been triggered:\\n—\\n    _healthcheck failed 3 time(s) in a row_\\n—   \\n*Description* \\ndescription-1  \\n\\n*Condition results*\\n❌ - `[CONNECTED] == true`\\n❌ - `[STATUS] == 200`\\n\",\"parse_mode\":\"MARKDOWN\"}",
+			ExpectedText: "🔴 <b>core</b> / <a href=\"https://example.org/health\">backend</a>\n\n<i>healthcheck failed 3 time(s) in a row</i>\n\n<b>Condition results:</b>\n• <code>[STATUS] (503) == 200</code>\n• <code>[BODY].status (down) == ok</code>",
 		},
 		{
-			Name:         "resolved",
-			Provider:     AlertProvider{DefaultConfig: Config{ID: "123"}},
-			Alert:        alert.Alert{Description: &secondDescription, SuccessThreshold: 5, FailureThreshold: 3},
+			Name:         "resolved is short: no conditions block",
+			Config:       Config{ID: "123"},
+			Endpoint:     endpoint.Endpoint{Name: "backend", Group: "core", URL: "https://example.org/health"},
+			Alert:        alert.Alert{FailureThreshold: 3, SuccessThreshold: 2},
+			Conditions:   []*endpoint.ConditionResult{{Condition: "[STATUS] (200) == 200", Success: true}},
 			Resolved:     true,
-			ExpectedBody: "{\"chat_id\":\"123\",\"text\":\"⛑ *Gatus* \\nAn alert for *endpoint-name* has been resolved:\\n—\\n    _healthcheck passing successfully 5 time(s) in a row_\\n—   \\n*Description* \\ndescription-2  \\n\\n*Condition results*\\n✅ - `[CONNECTED] == true`\\n✅ - `[STATUS] == 200`\\n\",\"parse_mode\":\"MARKDOWN\"}",
+			ExpectedText: "🟢 <b>core</b> / <a href=\"https://example.org/health\">backend</a>\n\n<i>healthcheck passing 2 time(s) in a row</i>",
 		},
 		{
-			Name:         "resolved-with-no-conditions",
-			NoConditions: true,
-			Provider:     AlertProvider{DefaultConfig: Config{ID: "123"}},
-			Alert:        alert.Alert{Description: &secondDescription, SuccessThreshold: 5, FailureThreshold: 3},
-			Resolved:     true,
-			ExpectedBody: "{\"chat_id\":\"123\",\"text\":\"⛑ *Gatus* \\nAn alert for *endpoint-name* has been resolved:\\n—\\n    _healthcheck passing successfully 5 time(s) in a row_\\n—   \\n*Description* \\ndescription-2  \\n\",\"parse_mode\":\"MARKDOWN\"}",
-		},
-		{
-			Name:         "send to topic",
-			Provider:     AlertProvider{DefaultConfig: Config{ID: "123", TopicID: "7"}},
-			Alert:        alert.Alert{Description: &firstDescription, SuccessThreshold: 5, FailureThreshold: 3},
+			Name:         "custom-emoji on wraps premium tag",
+			Config:       Config{ID: "123", CustomEmoji: true},
+			Endpoint:     endpoint.Endpoint{Name: "backend", Group: "core", URL: "https://example.org/health"},
+			Alert:        alert.Alert{FailureThreshold: 1},
+			Conditions:   []*endpoint.ConditionResult{{Condition: "[STATUS] (503) == 200", Success: false}},
 			Resolved:     false,
-			ExpectedBody: "{\"chat_id\":\"123\",\"text\":\"⛑ *Gatus* \\nAn alert for *endpoint-name* has been triggered:\\n—\\n    _healthcheck failed 3 time(s) in a row_\\n—   \\n*Description* \\ndescription-1  \\n\\n*Condition results*\\n❌ - `[CONNECTED] == true`\\n❌ - `[STATUS] == 200`\\n\",\"parse_mode\":\"MARKDOWN\",\"message_thread_id\":\"7\"}",
+			ExpectedText: "<tg-emoji emoji-id='5240431636713065543'>🔴</tg-emoji> <b>core</b> / <a href=\"https://example.org/health\">backend</a>\n\n<i>healthcheck failed 1 time(s) in a row</i>\n\n<b>Condition results:</b>\n• <code>[STATUS] (503) == 200</code>",
 		},
 		{
-			Name:         "triggered with link in description",
-			Provider:     AlertProvider{DefaultConfig: Config{ID: "123"}},
-			Alert:        alert.Alert{Description: &descriptionWithLink, SuccessThreshold: 5, FailureThreshold: 3},
+			Name:         "no url: name is bold, not a link",
+			Config:       Config{ID: "123"},
+			Endpoint:     endpoint.Endpoint{Name: "demo-bot", Group: "bots"},
+			Alert:        alert.Alert{FailureThreshold: 2},
+			Conditions:   []*endpoint.ConditionResult{{Condition: "[CONNECTED] (false) == true", Success: false}},
 			Resolved:     false,
-			ExpectedBody: "{\"chat_id\":\"123\",\"text\":\"⛑ *Gatus* \\nAn alert for *endpoint-name* has been triggered:\\n—\\n    _healthcheck failed 3 time(s) in a row_\\n—   \\n*Description* \\n[link](https://example.org/)  \\n\\n*Condition results*\\n❌ - `[CONNECTED] == true`\\n❌ - `[STATUS] == 200`\\n\",\"parse_mode\":\"MARKDOWN\"}",
+			ExpectedText: "🔴 <b>bots</b> / <b>demo-bot</b>\n\n<i>healthcheck failed 2 time(s) in a row</i>\n\n<b>Condition results:</b>\n• <code>[CONNECTED] (false) == true</code>",
+		},
+		{
+			Name:     "html-unsafe condition + url are escaped so the alert can't be dropped",
+			Config:   Config{ID: "123"},
+			Endpoint: endpoint.Endpoint{Name: "frontend", Group: "core", URL: "https://example.org/?a=1&b=2"},
+			Alert:    alert.Alert{FailureThreshold: 3},
+			Conditions: []*endpoint.ConditionResult{
+				{Condition: "[BODY] == pat(*<title>x</title>*)", Success: false},
+			},
+			Resolved:     false,
+			ExpectedText: "🔴 <b>core</b> / <a href=\"https://example.org/?a=1&amp;b=2\">frontend</a>\n\n<i>healthcheck failed 3 time(s) in a row</i>\n\n<b>Condition results:</b>\n• <code>[BODY] == pat(*&lt;title&gt;x&lt;/title&gt;*)</code>",
 		},
 	}
 	for _, scenario := range scenarios {
 		t.Run(scenario.Name, func(t *testing.T) {
-			var conditionResults []*endpoint.ConditionResult
-			if !scenario.NoConditions {
-				conditionResults = []*endpoint.ConditionResult{
-					{Condition: "[CONNECTED] == true", Success: scenario.Resolved},
-					{Condition: "[STATUS] == 200", Success: scenario.Resolved},
-				}
+			text := buildMessageText(&scenario.Config, &scenario.Endpoint, &scenario.Alert, &endpoint.Result{ConditionResults: scenario.Conditions}, scenario.Resolved)
+			if text != scenario.ExpectedText {
+				t.Errorf("expected:\n%q\ngot:\n%q", scenario.ExpectedText, text)
 			}
-			body := scenario.Provider.buildRequestBody(
-				&scenario.Provider.DefaultConfig,
-				&endpoint.Endpoint{Name: "endpoint-name"},
-				&scenario.Alert,
-				&endpoint.Result{ConditionResults: conditionResults},
-				scenario.Resolved,
-			)
-			if string(body) != scenario.ExpectedBody {
-				t.Errorf("expected:\n%s\ngot:\n%s", scenario.ExpectedBody, body)
+			// must still be valid JSON
+			body, err := json.Marshal(Body{ChatID: scenario.Config.ID, Text: text, ParseMode: "HTML"})
+			if err != nil {
+				t.Error("expected valid JSON body, got error:", err.Error())
 			}
 			out := make(map[string]interface{})
 			if err := json.Unmarshal(body, &out); err != nil {
@@ -199,25 +204,14 @@ func TestAlertProvider_buildRequestBody(t *testing.T) {
 	}
 }
 
-func TestAlertProvider_Send_TokenNotLeakedOnConnectionFailure(t *testing.T) {
+func TestAlertProvider_Send_TokenNotLeakedOnInvalidURL(t *testing.T) {
 	t.Parallel()
 	const secretToken = "999999:SECRET-TOKEN-MUST-NOT-LEAK"
-	// Use a server that immediately closes the connection so client.Do returns a *url.Error.
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hj, ok := w.(http.Hijacker)
-		if !ok {
-			http.Error(w, "hijack not supported", http.StatusInternalServerError)
-			return
-		}
-		conn, _, _ := hj.Hijack()
-		conn.Close()
-	}))
-	defer ts.Close()
-
+	// A control character makes http.NewRequest fail with a *url.Error carrying the full URL.
 	provider := AlertProvider{DefaultConfig: Config{
 		Token:  secretToken,
 		ID:     "12345678",
-		ApiUrl: ts.URL,
+		ApiUrl: "http://example.org\x7f",
 	}}
 	description := "test"
 	err := provider.Send(
@@ -227,7 +221,7 @@ func TestAlertProvider_Send_TokenNotLeakedOnConnectionFailure(t *testing.T) {
 		false,
 	)
 	if err == nil {
-		t.Fatal("expected an error due to connection failure, got none")
+		t.Fatal("expected an error due to the invalid URL, got none")
 	}
 	if strings.Contains(err.Error(), secretToken) {
 		t.Errorf("error message must not contain the bot token, got: %s", err.Error())

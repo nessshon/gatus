@@ -6,7 +6,7 @@
     </div>
 
     <!-- Main App Container -->
-    <div v-else-if="!config || !config.oidc || config.authenticated" class="relative">
+    <div v-else-if="!config || !config.oidc || config.authenticated" class="flex flex-col min-h-screen">
       <!-- Header -->
       <header class="border-b bg-card/50 backdrop-blur supports-[backdrop-filter]:bg-card/60">
         <div class="container mx-auto px-4 py-4 max-w-7xl">
@@ -19,25 +19,22 @@
                 target="_blank"
                 :class="['flex items-center gap-3', link && 'hover:opacity-80 transition-opacity']"
               >
-                <div class="w-12 h-12 flex items-center justify-center">
+                <div class="w-9 h-9 flex items-center justify-center">
                   <img 
                     v-if="logo" 
                     :src="logo" 
-                    alt="Gatus" 
+                    alt="" 
                     class="w-full h-full object-contain"
                   />
                   <img 
                     v-else 
                     src="./assets/logo.svg" 
-                    alt="Gatus" 
+                    alt="" 
                     class="w-full h-full object-contain"
                   />
                 </div>
                 <div>
                   <h1 class="text-2xl font-bold tracking-tight">{{ header }}</h1>
-                  <p v-if="buttons && buttons.length" class="text-sm text-muted-foreground">
-                    System Monitoring Dashboard
-                  </p>
                 </div>
               </component>
             </div>
@@ -91,18 +88,20 @@
       </header>
 
       <!-- Main Content -->
-      <main class="relative">
+      <main class="relative flex-1">
         <router-view @showTooltip="showTooltip" :announcements="announcements" />
       </main>
 
-      <!-- Footer -->
-      <footer class="border-t mt-auto">
-        <div class="container mx-auto px-4 py-6 max-w-7xl">
-          <div class="flex flex-col items-center gap-4">
-            <div class="text-sm text-muted-foreground text-center">
-              Powered by <a href="https://gatus.io" target="_blank" class="font-medium text-emerald-800 hover:text-emerald-600">Gatus</a>
+      <footer class="border-t bg-card/50 backdrop-blur supports-[backdrop-filter]:bg-card/60 mt-auto">
+        <div class="container mx-auto px-4 py-4 max-w-7xl">
+          <div class="relative flex items-center justify-center">
+            <span class="text-sm text-muted-foreground">
+              <template v-if="footer">{{ footer }}</template>
+              <template v-else>Powered by <a href="https://gatus.io" target="_blank" class="font-medium text-emerald-800 hover:text-emerald-600">Gatus</a></template>
+            </span>
+            <div class="absolute right-0">
+              <Social :href="social" />
             </div>
-            <Social />
           </div>
         </div>
       </footer>
@@ -115,9 +114,9 @@
           <div v-if="logo" class="flex items-center justify-center gap-4 mb-4">
             <img :src="logo" alt="" class="w-20 h-20 object-contain" />
             <div class="w-px h-12 bg-border"></div>
-            <img src="./assets/logo.svg" alt="Gatus" class="w-20 h-20" />
+            <img src="./assets/logo.svg" alt="" class="w-20 h-20" />
           </div>
-          <img v-else src="./assets/logo.svg" alt="Gatus" class="w-20 h-20 mx-auto mb-4" />
+          <img v-else src="./assets/logo.svg" alt="" class="w-20 h-20 mx-auto mb-4" />
           <CardTitle class="text-3xl">{{ header }}</CardTitle>
           <p class="text-muted-foreground mt-2">{{ loginSubtitle }}</p>
         </CardHeader>
@@ -194,6 +193,14 @@ const buttons = computed(() => {
 
 const loginSubtitle = computed(() => {
   return window.config && window.config.loginSubtitle && window.config.loginSubtitle !== '{{ .UI.LoginSubtitle }}' ? window.config.loginSubtitle : "System Monitoring Dashboard"
+})
+
+const footer = computed(() => {
+  return window.config && window.config.footer && window.config.footer !== '{{ .UI.Footer }}' ? window.config.footer : ""
+})
+
+const social = computed(() => {
+  return window.config && window.config.social && window.config.social !== '{{ .UI.Social }}' ? window.config.social : ""
 })
 
 // Methods

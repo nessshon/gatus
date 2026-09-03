@@ -10,20 +10,20 @@ import (
 )
 
 const (
-	defaultTitle                = "Health Dashboard | Gatus"
-	defaultDescription          = "Gatus is an advanced automated status page that lets you monitor your applications and configure alerts to notify you if there's an issue"
-	defaultHeader               = "Gatus"
-	defaultDashboardHeading     = "Health Dashboard"
-	defaultDashboardSubheading  = "Monitor the health of your endpoints in real-time"
-	defaultLogo                 = ""
-	defaultLink                 = ""
-	defaultFavicon              = "/favicon.ico"
-	defaultFavicon16            = "/favicon-16x16.png"
-	defaultFavicon32            = "/favicon-32x32.png"
-	defaultCustomCSS            = ""
-	defaultSortBy               = "name"
-	defaultFilterBy             = "none"
-	defaultLoginSubtitle        = "System Monitoring Dashboard"
+	defaultTitle               = "Health Dashboard | Gatus"
+	defaultDescription         = "Gatus is an advanced automated status page that lets you monitor your applications and configure alerts to notify you if there's an issue"
+	defaultHeader              = "Gatus"
+	defaultDashboardHeading    = "Health Dashboard"
+	defaultDashboardSubheading = "Monitor the health of your endpoints in real-time"
+	defaultLogo                = ""
+	defaultLink                = ""
+	defaultFavicon             = "/favicon.ico"
+	defaultFavicon16           = "/favicon-16x16.png"
+	defaultFavicon32           = "/favicon-32x32.png"
+	defaultCustomCSS           = ""
+	defaultSortBy              = "name"
+	defaultFilterBy            = "none"
+	defaultLoginSubtitle       = "System Monitoring Dashboard"
 )
 
 var (
@@ -36,20 +36,25 @@ var (
 
 // Config is the configuration for the UI of Gatus
 type Config struct {
-	Title                   string   `yaml:"title,omitempty"`                  // Title of the page
-	Description             string   `yaml:"description,omitempty"`            // Meta description of the page
-	DashboardHeading        string   `yaml:"dashboard-heading,omitempty"`      // Dashboard Title between header and endpoints
-	DashboardSubheading     string   `yaml:"dashboard-subheading,omitempty"`   // Dashboard Description between header and endpoints
-	Header                  string   `yaml:"header,omitempty"`                 // Header is the text at the top of the page
-	Logo                    string   `yaml:"logo,omitempty"`                   // Logo to display on the page
-	Link                    string   `yaml:"link,omitempty"`                   // Link to open when clicking on the logo
-	Favicon                 Favicon  `yaml:"favicon,omitempty"`                // Favourite icon to display in web browser tab or address bar
-	Buttons                 []Button `yaml:"buttons,omitempty"`                // Buttons to display below the header
-	CustomCSS               string   `yaml:"custom-css,omitempty"`             // Custom CSS to include in the page
-	DarkMode                *bool    `yaml:"dark-mode,omitempty"`              // DarkMode is a flag to enable dark mode by default
-	DefaultSortBy           string   `yaml:"default-sort-by,omitempty"`        // DefaultSortBy is the default sort option ('name', 'group', 'health')
-	DefaultFilterBy         string   `yaml:"default-filter-by,omitempty"`      // DefaultFilterBy is the default filter option ('none', 'failing', 'unstable')
-	LoginSubtitle           string   `yaml:"login-subtitle,omitempty"`         // LoginSubtitle is the subtitle displayed on the OIDC login page
+	Title                  string   `yaml:"title,omitempty"`                    // Title of the page
+	Description            string   `yaml:"description,omitempty"`              // Meta description of the page
+	DashboardHeading       string   `yaml:"dashboard-heading,omitempty"`        // Dashboard Title between header and endpoints
+	DashboardSubheading    string   `yaml:"dashboard-subheading,omitempty"`     // Dashboard Description between header and endpoints
+	Header                 string   `yaml:"header,omitempty"`                   // Header is the text at the top of the page
+	Logo                   string   `yaml:"logo,omitempty"`                     // Logo to display on the page
+	Link                   string   `yaml:"link,omitempty"`                     // Link to open when clicking on the logo
+	Favicon                Favicon  `yaml:"favicon,omitempty"`                  // Favourite icon to display in web browser tab or address bar
+	Buttons                []Button `yaml:"buttons,omitempty"`                  // Buttons to display below the header
+	CustomCSS              string   `yaml:"custom-css,omitempty"`               // Custom CSS to include in the page
+	DarkMode               *bool    `yaml:"dark-mode,omitempty"`                // DarkMode is a flag to enable dark mode by default
+	DefaultSortBy          string   `yaml:"default-sort-by,omitempty"`          // DefaultSortBy is the default sort option ('name', 'group', 'health')
+	DefaultFilterBy        string   `yaml:"default-filter-by,omitempty"`        // DefaultFilterBy is the default filter option ('none', 'failing', 'unstable')
+	LoginSubtitle          string   `yaml:"login-subtitle,omitempty"`           // LoginSubtitle is the subtitle displayed on the OIDC login page
+	Footer                 string   `yaml:"footer,omitempty"`                   // Footer text; empty shows the default "Powered by Gatus"
+	Social                 string   `yaml:"social,omitempty"`                   // URL for the footer social icon; empty uses the default GitHub link
+	HideControls           bool     `yaml:"hide-controls,omitempty"`            // HideControls hides the search/filter/sort bar
+	DefaultExpanded        bool     `yaml:"default-expanded,omitempty"`         // DefaultExpanded expands all groups by default (until the visitor collapses one)
+	DefaultRefreshInterval int      `yaml:"default-refresh-interval,omitempty"` // DefaultRefreshInterval is the initial UI auto-refresh in seconds (10/30/60/120/300/600); 0 keeps the built-in default
 	//////////////////////////////////////////////
 	// Non-configurable - used for UI rendering //
 	//////////////////////////////////////////////

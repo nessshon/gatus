@@ -99,6 +99,10 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	})
 	// Custom CSS
 	app.Get("/css/custom.css", CustomCSSHandler{customCSS: cfg.UI.CustomCSS}.GetCustomCSS)
+	// Optional user assets (logo, favicon) from a mounted dir, referenced as /assets/... in ui.logo/ui.favicon
+	if assetsPath := os.Getenv("GATUS_UI_ASSETS_PATH"); len(assetsPath) > 0 {
+		app.Static("/assets", assetsPath)
+	}
 	// Everything else falls back on static content
 	app.Use(redirect.New(redirect.Config{
 		Rules: map[string]string{

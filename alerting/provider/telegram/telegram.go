@@ -291,6 +291,15 @@ func buildMessageText(cfg *Config, ep *endpoint.Endpoint, alert *alert.Alert, re
 				b.WriteString("</code>")
 			}
 		}
+		// External endpoints have no conditions, the reason is in result.Errors
+		if len(result.Errors) > 0 {
+			b.WriteString("\n\n<b>Error:</b>")
+			for _, e := range result.Errors {
+				b.WriteString("\n<code>")
+				b.WriteString(html.EscapeString(strings.ReplaceAll(e, "\n", " ")))
+				b.WriteString("</code>")
+			}
+		}
 	}
 	return b.String()
 }

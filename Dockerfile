@@ -12,6 +12,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o gatus .
 
 # Run the binary on an empty container
 FROM scratch
+LABEL org.opencontainers.image.source="https://github.com/nessshon/gatus" \
+      org.opencontainers.image.description="Gatus fork: styled Telegram alerts, configurable UI branding and layout" \
+      org.opencontainers.image.licenses="Apache-2.0"
 COPY --from=builder /app/gatus .
 COPY --from=builder /app/config.yaml ./config/config.yaml
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt

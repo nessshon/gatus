@@ -283,6 +283,16 @@ func buildMessageText(cfg *Config, ep *endpoint.Endpoint, alert *alert.Alert, re
 				b.WriteString("</code>")
 			}
 		}
+		// heartbeat/external endpoints have no conditions — the reason lands in
+		// result.Errors; flatten newlines and escape so it can't break parse_mode
+		if len(result.Errors) > 0 {
+			b.WriteString("\n\n<b>Error:</b>")
+			for _, e := range result.Errors {
+				b.WriteString("\n<code>")
+				b.WriteString(html.EscapeString(strings.ReplaceAll(e, "\n", " ")))
+				b.WriteString("</code>")
+			}
+		}
 	}
 	return b.String()
 }

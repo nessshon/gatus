@@ -132,6 +132,7 @@ func TestAlertProvider_buildMessageText(t *testing.T) {
 		Endpoint     endpoint.Endpoint
 		Alert        alert.Alert
 		Conditions   []*endpoint.ConditionResult
+		Errors       []string
 		Resolved     bool
 		ExpectedText string
 	}{
@@ -185,10 +186,19 @@ func TestAlertProvider_buildMessageText(t *testing.T) {
 			Resolved:     false,
 			ExpectedText: "🔴 <b>core</b> / <a href=\"https://example.org/?a=1&amp;b=2\">frontend</a>\n\n<i>healthcheck failed 3 time(s) in a row</i>\n\n<b>Condition results:</b>\n• <code>[BODY] == pat(*&lt;title&gt;x&lt;/title&gt;*)</code>",
 		},
+		{
+			Name:         "external heartbeat: no conditions, error block html-escaped and newline-flattened",
+			Config:       Config{ID: "123"},
+			Endpoint:     endpoint.Endpoint{Name: "demo-bot", Group: "bots"},
+			Alert:        alert.Alert{FailureThreshold: 3},
+			Errors:       []string{"heartbeat: no update received within 5m0s\n<reset> & <peer>"},
+			Resolved:     false,
+			ExpectedText: "🔴 <b>bots</b> / <b>demo-bot</b>\n\n<i>healthcheck failed 3 time(s) in a row</i>\n\n<b>Error:</b>\n<code>heartbeat: no update received within 5m0s &lt;reset&gt; &amp; &lt;peer&gt;</code>",
+		},
 	}
 	for _, scenario := range scenarios {
 		t.Run(scenario.Name, func(t *testing.T) {
-			text := buildMessageText(&scenario.Config, &scenario.Endpoint, &scenario.Alert, &endpoint.Result{ConditionResults: scenario.Conditions}, scenario.Resolved)
+			text := buildMessageText(&scenario.Config, &scenario.Endpoint, &scenario.Alert, &endpoint.Result{ConditionResults: scenario.Conditions, Errors: scenario.Errors}, scenario.Resolved)
 			if text != scenario.ExpectedText {
 				t.Errorf("expected:\n%q\ngot:\n%q", scenario.ExpectedText, text)
 			}

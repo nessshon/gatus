@@ -198,4 +198,8 @@ func (cfg *Config) ValidateAndSetDefaults() error {
 type ViewData struct {
 	UI    *Config
 	Theme string
+	OIDC  bool // The dashboard waits for /api/v1/config only with OIDC, so a logged-out visitor never sees it before the login page
+	// PlaceholderCount is how many skeleton cards to draw until the first statuses arrive. Only the number is
+	// exposed because the page itself is served without authentication
+	PlaceholderCount int
 }

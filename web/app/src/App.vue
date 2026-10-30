@@ -1,9 +1,7 @@
 <template>
   <div id="global" class="bg-background text-foreground">
-    <!-- Loading State -->
-    <div v-if="!retrievedConfig" class="flex items-center justify-center min-h-screen">
-      <Loading size="lg" />
-    </div>
+    <!-- With OIDC, wait for /api/v1/config to know whether to show the login page -->
+    <div v-if="awaitingAuthState" class="min-h-screen"></div>
 
     <!-- Main App Container -->
     <div v-else-if="!config || !config.oidc || config.authenticated" class="flex flex-col min-h-screen">
@@ -166,6 +164,7 @@ const route = useRoute()
 
 // State
 const retrievedConfig = ref(false)
+const awaitingAuthState = computed(() => !retrievedConfig.value && !!(window.config && window.config.oidc === true))
 const config = ref({ oidc: false, authenticated: true })
 const announcements = ref([])
 const tooltip = ref({})

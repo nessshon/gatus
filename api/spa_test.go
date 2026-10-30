@@ -11,6 +11,7 @@ import (
 	"github.com/TwiN/gatus/v5/config"
 	"github.com/TwiN/gatus/v5/config/endpoint"
 	"github.com/TwiN/gatus/v5/config/ui"
+	"github.com/TwiN/gatus/v5/security"
 	"github.com/TwiN/gatus/v5/storage/store"
 	"github.com/TwiN/gatus/v5/watchdog"
 )
@@ -103,5 +104,42 @@ func TestSinglePageApplication(t *testing.T) {
 				t.Errorf("%s %s should not have responded with dark mode headers", request.Method, request.URL)
 			}
 		})
+	}
+}
+
+func TestSinglePageApplication_Placeholders(t *testing.T) {
+	protected := &security.Config{Basic: &security.BasicConfig{
+		Username:                        "john.doe",
+		PasswordBcryptHashBase64Encoded: "JDJhJDA4JDFoRnpPY1hnaFl1OC9ISlFsa21VS09wOGlPU1ZOTDlHZG1qeTFvb3dIckRBUnlHUmNIRWlT",
+	}}
+	for _, securityConfig := range []*security.Config{nil, protected} {
+		cfg := &config.Config{
+			Endpoints: []*endpoint.Endpoint{
+				{Name: "frontend", Group: "core"},
+				{Name: "backend"},
+			},
+			ExternalEndpoints: []*endpoint.ExternalEndpoint{
+				{Name: "heartbeat", Group: "jobs"},
+			},
+			Security: securityConfig,
+			UI:       ui.GetDefaultConfig(),
+		}
+		response, err := New(cfg).Router().Test(httptest.NewRequest("GET", "/", http.NoBody))
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(response.Body)
+		response.Body.Close()
+		strBody := string(body)
+		// html/template pads numbers it writes into a script with spaces
+		if !strings.Contains(strBody, "placeholders:  3 }") {
+			t.Errorf("expected 3 placeholders (protected=%v)", securityConfig != nil)
+		}
+		// The page is served without authentication, so endpoint names and groups must never be in it
+		for _, leaked := range []string{"frontend", "backend", "heartbeat", "core", "jobs"} {
+			if strings.Contains(strBody, leaked) {
+				t.Errorf("page must not contain %q (protected=%v)", leaked, securityConfig != nil)
+			}
+		}
 	}
 }

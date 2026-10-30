@@ -36,8 +36,10 @@
         />
       </div>
 
-      <!-- first load: no second spinner (App shows one), no false empty-state flash -->
-      <div v-if="loading" class="py-20"></div>
+      <!-- first load: as many skeleton cards as the server says there are endpoints, no false empty-state flash -->
+      <div v-if="loading" class="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+        <EndpointCardSkeleton v-for="index in placeholderCount" :key="index" :maxResults="resultPageSize" />
+      </div>
 
       <div v-else-if="filteredEndpoints.length === 0 && filteredSuites.length === 0" class="text-center py-20">
         <AlertCircle class="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -186,6 +188,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { Activity, Timer, RefreshCw, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, CheckCircle } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import EndpointCard from '@/components/EndpointCard.vue'
+import EndpointCardSkeleton from '@/components/EndpointCardSkeleton.vue'
 import SuiteCard from '@/components/SuiteCard.vue'
 import SearchBar from '@/components/SearchBar.vue'
 import Settings from '@/components/Settings.vue'
@@ -212,9 +215,10 @@ const emit = defineEmits(['showTooltip'])
 
 const endpointStatuses = ref([])
 const suiteStatuses = ref([])
-const loading = ref(false)
+const loading = ref(true)
 const currentPage = ref(1)
 const itemsPerPage = 96
+const placeholderCount = Math.min(window.config && Number(window.config.placeholders) || 0, itemsPerPage)
 const searchQuery = ref('')
 const showOnlyFailing = ref(false)
 const showRecentFailures = ref(false)

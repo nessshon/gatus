@@ -4,15 +4,20 @@ import (
 	_ "embed"
 	"html/template"
 
+	"github.com/TwiN/gatus/v5/config"
 	"github.com/TwiN/gatus/v5/config/ui"
 	static "github.com/TwiN/gatus/v5/web"
 	"github.com/TwiN/logr"
 	"github.com/gofiber/fiber/v2"
 )
 
-func SinglePageApplication(uiConfig *ui.Config) fiber.Handler {
+func SinglePageApplication(cfg *config.Config) fiber.Handler {
+	uiConfig := cfg.UI
+	hasOIDC := cfg.Security != nil && cfg.Security.OIDC != nil
+	// Same endpoints main.initializeStorage keeps statuses for, i.e. what /api/v1/endpoints/statuses returns
+	placeholderCount := len(cfg.Endpoints) + len(cfg.ExternalEndpoints)
 	return func(c *fiber.Ctx) error {
-		vd := ui.ViewData{UI: uiConfig}
+		vd := ui.ViewData{UI: uiConfig, OIDC: hasOIDC, PlaceholderCount: placeholderCount}
 		{
 			themeFromCookie := string(c.Request().Header.Cookie("theme"))
 			if len(themeFromCookie) > 0 {

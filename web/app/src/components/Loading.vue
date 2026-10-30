@@ -15,7 +15,7 @@
 import { computed } from 'vue'
 import bundledLogo from '../assets/logo.svg'
 
-// Spinner renders before /api/v1/config loads, so use the server-injected logo (bundled is the fallback)
+// Use the server-injected logo; the bundled one is the fallback (e.g. in dev, where the template is not rendered)
 const logoSrc = computed(() => {
   const configured = window.config && window.config.logo
   return configured && configured !== '{{ .UI.Logo }}' ? configured : bundledLogo

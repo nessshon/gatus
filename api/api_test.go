@@ -37,6 +37,11 @@ func TestNew(t *testing.T) {
 			Gzip:         true,
 		},
 		{
+			Name:         "manifest.json",
+			Path:         "/manifest.json",
+			ExpectedCode: fiber.StatusOK,
+		},
+		{
 			Name:         "metrics",
 			Path:         "/metrics",
 			ExpectedCode: fiber.StatusOK,

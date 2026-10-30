@@ -99,6 +99,8 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	})
 	// Custom CSS
 	app.Get("/css/custom.css", CustomCSSHandler{customCSS: cfg.UI.CustomCSS}.GetCustomCSS)
+	// From ui, so an installed app gets the configured name and icons
+	app.Get("/manifest.json", NewManifestHandler(cfg.UI).GetManifest)
 	// Logo and favicons from GATUS_UI_ASSETS_PATH, referenced as /assets/...
 	if assetsPath := os.Getenv("GATUS_UI_ASSETS_PATH"); len(assetsPath) > 0 {
 		app.Static("/assets", assetsPath)

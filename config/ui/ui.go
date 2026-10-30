@@ -20,6 +20,9 @@ const (
 	defaultFavicon             = "/favicon.ico"
 	defaultFavicon16           = "/favicon-16x16.png"
 	defaultFavicon32           = "/favicon-32x32.png"
+	defaultFavicon180          = "/apple-touch-icon.png"
+	defaultFavicon192          = "/logo-192x192.png"
+	defaultFavicon512          = "/logo-512x512.png"
 	defaultCustomCSS           = ""
 	defaultSortBy              = "name"
 	defaultFilterBy            = "none"
@@ -83,9 +86,12 @@ func (btn *Button) Validate() error {
 }
 
 type Favicon struct {
-	Default   string `yaml:"default,omitempty"`   // URL or path to default favourite icon.
-	Size16x16 string `yaml:"size16x16,omitempty"` // URL or path to favourite icon for 16x16 size.
-	Size32x32 string `yaml:"size32x32,omitempty"` // URL or path to favourite icon for 32x32 size.
+	Default     string `yaml:"default,omitempty"`     // URL or path to default favourite icon.
+	Size16x16   string `yaml:"size16x16,omitempty"`   // URL or path to favourite icon for 16x16 size.
+	Size32x32   string `yaml:"size32x32,omitempty"`   // URL or path to favourite icon for 32x32 size.
+	Size180x180 string `yaml:"size180x180,omitempty"` // URL or path to the apple-touch-icon (180x180).
+	Size192x192 string `yaml:"size192x192,omitempty"` // URL or path to the 192x192 icon in the web app manifest.
+	Size512x512 string `yaml:"size512x512,omitempty"` // URL or path to the 512x512 icon in the web app manifest.
 }
 
 // GetDefaultConfig returns a Config struct with the default values
@@ -105,9 +111,12 @@ func GetDefaultConfig() *Config {
 		LoginSubtitle:          defaultLoginSubtitle,
 		MaximumNumberOfResults: storage.DefaultMaximumNumberOfResults,
 		Favicon: Favicon{
-			Default:   defaultFavicon,
-			Size16x16: defaultFavicon16,
-			Size32x32: defaultFavicon32,
+			Default:     defaultFavicon,
+			Size16x16:   defaultFavicon16,
+			Size32x32:   defaultFavicon32,
+			Size180x180: defaultFavicon180,
+			Size192x192: defaultFavicon192,
+			Size512x512: defaultFavicon512,
 		},
 	}
 }
@@ -162,6 +171,15 @@ func (cfg *Config) ValidateAndSetDefaults() error {
 	}
 	if len(cfg.Favicon.Size32x32) == 0 {
 		cfg.Favicon.Size32x32 = defaultFavicon32
+	}
+	if len(cfg.Favicon.Size180x180) == 0 {
+		cfg.Favicon.Size180x180 = defaultFavicon180
+	}
+	if len(cfg.Favicon.Size192x192) == 0 {
+		cfg.Favicon.Size192x192 = defaultFavicon192
+	}
+	if len(cfg.Favicon.Size512x512) == 0 {
+		cfg.Favicon.Size512x512 = defaultFavicon512
 	}
 	for _, btn := range cfg.Buttons {
 		if err := btn.Validate(); err != nil {

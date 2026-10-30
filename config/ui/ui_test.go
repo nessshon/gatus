@@ -50,6 +50,15 @@ func TestConfig_ValidateAndSetDefaults(t *testing.T) {
 		if cfg.Favicon.Size32x32 != defaultFavicon32 {
 			t.Errorf("expected favicon to be %s, got %s", defaultFavicon32, cfg.Favicon.Size32x32)
 		}
+		if cfg.Favicon.Size180x180 != defaultFavicon180 {
+			t.Errorf("expected favicon to be %s, got %s", defaultFavicon180, cfg.Favicon.Size180x180)
+		}
+		if cfg.Favicon.Size192x192 != defaultFavicon192 {
+			t.Errorf("expected favicon to be %s, got %s", defaultFavicon192, cfg.Favicon.Size192x192)
+		}
+		if cfg.Favicon.Size512x512 != defaultFavicon512 {
+			t.Errorf("expected favicon to be %s, got %s", defaultFavicon512, cfg.Favicon.Size512x512)
+		}
 		if cfg.LoginSubtitle != defaultLoginSubtitle {
 			t.Errorf("expected LoginSubtitle to be %s, got %s", defaultLoginSubtitle, cfg.LoginSubtitle)
 		}
@@ -66,6 +75,11 @@ func TestConfig_ValidateAndSetDefaults(t *testing.T) {
 			DefaultSortBy:       "health",
 			DefaultFilterBy:     "failing",
 			LoginSubtitle:       "Welcome",
+			Favicon: Favicon{
+				Size180x180: "/assets/apple-touch-icon.png",
+				Size192x192: "/assets/icon-192.png",
+				Size512x512: "/assets/icon-512.png",
+			},
 		}
 		if err := cfg.ValidateAndSetDefaults(); err != nil {
 			t.Error("expected no error, got", err.Error())
@@ -99,6 +113,18 @@ func TestConfig_ValidateAndSetDefaults(t *testing.T) {
 		}
 		if cfg.LoginSubtitle != "Welcome" {
 			t.Errorf("expected LoginSubtitle to be preserved, got %s", cfg.LoginSubtitle)
+		}
+		if cfg.Favicon.Size180x180 != "/assets/apple-touch-icon.png" {
+			t.Errorf("expected favicon 180x180 to be preserved, got %s", cfg.Favicon.Size180x180)
+		}
+		if cfg.Favicon.Size192x192 != "/assets/icon-192.png" {
+			t.Errorf("expected favicon 192x192 to be preserved, got %s", cfg.Favicon.Size192x192)
+		}
+		if cfg.Favicon.Size512x512 != "/assets/icon-512.png" {
+			t.Errorf("expected favicon 512x512 to be preserved, got %s", cfg.Favicon.Size512x512)
+		}
+		if cfg.Favicon.Size16x16 != defaultFavicon16 {
+			t.Errorf("expected favicon 16x16 to fall back to %s, got %s", defaultFavicon16, cfg.Favicon.Size16x16)
 		}
 	})
 	t.Run("partial-custom-values", func(t *testing.T) {

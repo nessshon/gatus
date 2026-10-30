@@ -450,21 +450,17 @@ const fetchData = async () => {
     loading.value = true
   }
   try {
-    // Fetch endpoints
-    const endpointResponse = await fetch(`/api/v1/endpoints/statuses?page=1&pageSize=${resultPageSize}`, {
-      credentials: 'include'
-    })
+    // Endpoints and suites don't depend on each other, so fetch them in one round trip
+    const [endpointResponse, suiteResponse] = await Promise.all([
+      fetch(`/api/v1/endpoints/statuses?page=1&pageSize=${resultPageSize}`, { credentials: 'include' }),
+      fetch(`/api/v1/suites/statuses?page=1&pageSize=${resultPageSize}`, { credentials: 'include' }),
+    ])
     if (endpointResponse.status === 200) {
       const data = await endpointResponse.json()
       endpointStatuses.value = data
     } else {
       console.error('[Home][fetchData] Error fetching endpoints:', await endpointResponse.text())
     }
-    
-    // Fetch suites
-    const suiteResponse = await fetch(`/api/v1/suites/statuses?page=1&pageSize=${resultPageSize}`, {
-      credentials: 'include'
-    })
     if (suiteResponse.status === 200) {
       const suiteData = await suiteResponse.json()
       suiteStatuses.value = suiteData || []

@@ -36,8 +36,8 @@
         />
       </div>
 
-      <!-- first load: as many skeleton cards as the server says there are endpoints, no false empty-state flash -->
-      <div v-if="loading" class="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+      <!-- Without a layout from the server only the number of cards is known -->
+      <div v-if="loading && !hasPlaceholderLayout" class="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
         <EndpointCardSkeleton v-for="index in placeholderCount" :key="index" :maxResults="resultPageSize" />
       </div>
 
@@ -66,7 +66,8 @@
                 <h2 class="text-xl font-semibold text-foreground">{{ group }}</h2>
               </div>
               <div class="flex items-center gap-2">
-                <span v-if="calculateUnhealthyCount(items.endpoints) + calculateFailingSuitesCount(items.suites) > 0" 
+                <span v-if="loading" class="block h-6 w-6 rounded-full bg-muted animate-pulse motion-reduce:animate-none"></span>
+                <span v-else-if="calculateUnhealthyCount(items.endpoints) + calculateFailingSuitesCount(items.suites) > 0" 
                       class="bg-red-600 text-white px-2 py-1 rounded-full text-sm font-medium">
                   {{ calculateUnhealthyCount(items.endpoints) + calculateFailingSuitesCount(items.suites) }}
                 </span>
@@ -94,14 +95,16 @@
               <div v-if="items.endpoints.length > 0">
                 <h3 v-if="items.suites.length > 0" class="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Endpoints</h3>
                 <div class="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-                  <EndpointCard
-                    v-for="endpoint in items.endpoints"
-                    :key="endpoint.key"
-                    :endpoint="endpoint"
-                    :maxResults="resultPageSize"
-                    :showAverageResponseTime="showAverageResponseTime"
-                    @showTooltip="showTooltip"
-                  />
+                  <template v-for="endpoint in items.endpoints" :key="endpoint.key">
+                    <EndpointCardSkeleton v-if="loading" :maxResults="resultPageSize" />
+                    <EndpointCard
+                      v-else
+                      :endpoint="endpoint"
+                      :maxResults="resultPageSize"
+                      :showAverageResponseTime="showAverageResponseTime"
+                      @showTooltip="showTooltip"
+                    />
+                  </template>
                 </div>
               </div>
             </div>
@@ -128,14 +131,16 @@
           <div v-if="filteredEndpoints.length > 0">
             <h2 v-if="filteredSuites.length > 0" class="text-lg font-semibold text-foreground mb-3">Endpoints</h2>
             <div class="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-              <EndpointCard
-                v-for="endpoint in paginatedEndpoints"
-                :key="endpoint.key"
-                :endpoint="endpoint"
-                :maxResults="resultPageSize"
-                :showAverageResponseTime="showAverageResponseTime"
-                @showTooltip="showTooltip"
-              />
+              <template v-for="endpoint in paginatedEndpoints" :key="endpoint.key">
+                <EndpointCardSkeleton v-if="loading" :maxResults="resultPageSize" />
+                <EndpointCard
+                  v-else
+                  :endpoint="endpoint"
+                  :maxResults="resultPageSize"
+                  :showAverageResponseTime="showAverageResponseTime"
+                  @showTooltip="showTooltip"
+                />
+              </template>
             </div>
           </div>
         </div>
@@ -220,6 +225,8 @@ const refreshing = ref(false)
 const currentPage = ref(1)
 const itemsPerPage = 96
 const placeholderCount = Math.min(window.config && Number(window.config.placeholders) || 0, itemsPerPage)
+// Only without security, so the skeletons can be grouped and sorted like the cards
+const placeholderLayout = window.config && Array.isArray(window.config.placeholderLayout) ? window.config.placeholderLayout : null
 const searchQuery = ref('')
 const showOnlyFailing = ref(false)
 const showRecentFailures = ref(false)
@@ -233,8 +240,11 @@ const defaultExpanded = computed(() => !!(window.config && window.config.default
 const uncollapsedGroups = ref(new Set())
 const resultPageSize = 50
 
+// The failure filters need results, which the layout doesn't have
+const hasPlaceholderLayout = computed(() => !!placeholderLayout && !showOnlyFailing.value && !showRecentFailures.value)
+
 const filteredEndpoints = computed(() => {
-  let filtered = [...endpointStatuses.value]
+  let filtered = [...(loading.value && hasPlaceholderLayout.value ? placeholderLayout : endpointStatuses.value)]
   
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase()
@@ -393,7 +403,7 @@ const combinedGroups = computed(() => {
   return result
 })
 
-// default-expanded: open all groups once (after first fetch), unless the visitor already has a saved choice
+// A saved choice of the visitor wins over default-expanded
 let seededExpandedGroups = false
 watch(combinedGroups, (groups) => {
   if (seededExpandedGroups || !defaultExpanded.value || !groups) return
@@ -407,7 +417,7 @@ watch(combinedGroups, (groups) => {
   if (!hasSavedChoice) {
     uncollapsedGroups.value = new Set(names)
   }
-})
+}, { immediate: true })
 
 const paginatedEndpoints = computed(() => {
   if (groupByGroup.value) {

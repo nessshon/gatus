@@ -124,21 +124,38 @@ func TestSinglePageApplication_Placeholders(t *testing.T) {
 			Security: securityConfig,
 			UI:       ui.GetDefaultConfig(),
 		}
+		// Nothing was pushed to the external endpoint, so it has no status yet
+		watchdog.UpdateEndpointStatus(cfg.Endpoints[0], &endpoint.Result{Success: true, Timestamp: time.Now()})
+		watchdog.UpdateEndpointStatus(cfg.Endpoints[1], &endpoint.Result{Success: true, Timestamp: time.Now()})
 		response, err := New(cfg).Router().Test(httptest.NewRequest("GET", "/", http.NoBody))
 		if err != nil {
 			t.Fatal(err)
 		}
 		body, _ := io.ReadAll(response.Body)
 		response.Body.Close()
+		store.Get().Clear()
+		cache.Clear()
 		strBody := string(body)
 		// html/template pads numbers it writes into a script with spaces
-		if !strings.Contains(strBody, "placeholders:  3 }") {
-			t.Errorf("expected 3 placeholders (protected=%v)", securityConfig != nil)
+		if !strings.Contains(strBody, "placeholders:  2 ,") {
+			t.Errorf("expected 2 placeholders (protected=%v)", securityConfig != nil)
 		}
-		// The page is served without authentication, so endpoint names and groups must never be in it
-		for _, leaked := range []string{"frontend", "backend", "heartbeat", "core", "jobs"} {
+		if strings.Contains(strBody, "heartbeat") || strings.Contains(strBody, "jobs") {
+			t.Errorf("page must not contain an endpoint without a status (protected=%v)", securityConfig != nil)
+		}
+		if securityConfig == nil {
+			if !strings.Contains(strBody, `placeholderLayout: [{"key":"_backend","name":"backend"},{"key":"core_frontend","name":"frontend","group":"core"}]}`) {
+				t.Error("expected the placeholder layout in the same order as /api/v1/endpoints/statuses")
+			}
+			continue
+		}
+		// With security the page must not leak names or groups
+		if !strings.Contains(strBody, "placeholderLayout:  null }") {
+			t.Error("expected no placeholder layout with security")
+		}
+		for _, leaked := range []string{"frontend", "backend", "core"} {
 			if strings.Contains(strBody, leaked) {
-				t.Errorf("page must not contain %q (protected=%v)", leaked, securityConfig != nil)
+				t.Errorf("page must not contain %q with security", leaked)
 			}
 		}
 	}

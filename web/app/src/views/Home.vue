@@ -18,7 +18,7 @@
               <Timer v-else class="h-5 w-5" />
             </Button>
             <Button variant="ghost" size="icon" @click="refreshData" title="Refresh data">
-              <RefreshCw class="h-5 w-5" />
+              <RefreshCw :class="['h-5 w-5', refreshing && 'animate-spin motion-reduce:animate-none']" />
             </Button>
           </div>
         </div>
@@ -216,6 +216,7 @@ const emit = defineEmits(['showTooltip'])
 const endpointStatuses = ref([])
 const suiteStatuses = ref([])
 const loading = ref(true)
+const refreshing = ref(false)
 const currentPage = ref(1)
 const itemsPerPage = 96
 const placeholderCount = Math.min(window.config && Number(window.config.placeholders) || 0, itemsPerPage)
@@ -484,10 +485,11 @@ const fetchData = async () => {
   }
 }
 
-const refreshData = () => {
-  endpointStatuses.value = [];
-  suiteStatuses.value = [];
-  fetchData()
+// Clearing first would swap the cards for skeletons and lose the scroll
+const refreshData = async () => {
+  refreshing.value = true
+  await fetchData()
+  refreshing.value = false
 }
 
 const handleSearch = (query) => {

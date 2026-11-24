@@ -254,6 +254,12 @@ func TestConfig_ValidateAndSetDefaults_DefaultSortBy(t *testing.T) {
 			ExpectedValue: "health",
 		},
 		{
+			Name:          "ValidDefaultSortBy_config",
+			DefaultSortBy: "config",
+			ExpectedError: nil,
+			ExpectedValue: "config",
+		},
+		{
 			Name:          "InvalidDefaultSortBy",
 			DefaultSortBy: "invalid",
 			ExpectedError: ErrInvalidDefaultSortBy,

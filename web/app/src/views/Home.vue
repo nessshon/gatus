@@ -234,7 +234,7 @@ const showAverageResponseTime = ref(localStorage.getItem('gatus:show-average-res
 const configuredSortBy = window.config && window.config.defaultSortBy && window.config.defaultSortBy !== '{{ .UI.DefaultSortBy }}' ? window.config.defaultSortBy : 'name'
 const initialSortBy = localStorage.getItem('gatus:sort-by') || configuredSortBy
 const sortBy = ref(initialSortBy)
-const groupByGroup = ref(initialSortBy === 'group')
+const groupByGroup = ref(initialSortBy === 'group' || initialSortBy === 'config')
 const hideControls = computed(() => !!(window.config && window.config.hideControls === true))
 const defaultExpanded = computed(() => !!(window.config && window.config.defaultExpanded === true))
 const uncollapsedGroups = ref(new Set())
@@ -334,6 +334,18 @@ const totalPages = computed(() => {
   return Math.ceil((filteredEndpoints.value.length + filteredSuites.value.length) / itemsPerPage)
 })
 
+// Alphabetical with 'No Group' at the end; in config order the groups keep the order in which they first appear
+const sortGroupNames = (names) => {
+  if (sortBy.value === 'config') {
+    return names
+  }
+  return names.sort((a, b) => {
+    if (a === 'No Group') return 1
+    if (b === 'No Group') return -1
+    return a.localeCompare(b)
+  })
+}
+
 const groupedEndpoints = computed(() => {
   if (!groupByGroup.value) {
     return null
@@ -348,12 +360,7 @@ const groupedEndpoints = computed(() => {
     grouped[group].push(endpoint)
   })
   
-  // Sort groups alphabetically, with 'No Group' at the end
-  const sortedGroups = Object.keys(grouped).sort((a, b) => {
-    if (a === 'No Group') return 1
-    if (b === 'No Group') return -1
-    return a.localeCompare(b)
-  })
+  const sortedGroups = sortGroupNames(Object.keys(grouped))
   
   const result = {}
   sortedGroups.forEach(group => {
@@ -388,12 +395,7 @@ const combinedGroups = computed(() => {
     combined[group].suites.push(suite)
   })
   
-  // Sort groups alphabetically, with 'No Group' at the end
-  const sortedGroups = Object.keys(combined).sort((a, b) => {
-    if (a === 'No Group') return 1
-    if (b === 'No Group') return -1
-    return a.localeCompare(b)
-  })
+  const sortedGroups = sortGroupNames(Object.keys(combined))
   
   const result = {}
   sortedGroups.forEach(group => {
@@ -467,7 +469,7 @@ const fetchData = async () => {
   try {
     // Endpoints and suites don't depend on each other, so fetch them in one round trip
     const [endpointResponse, suiteResponse] = await Promise.all([
-      fetch(`/api/v1/endpoints/statuses?page=1&pageSize=${resultPageSize}`, { credentials: 'include' }),
+      fetch(`/api/v1/endpoints/statuses?page=1&pageSize=${resultPageSize}${sortBy.value === 'config' ? '&sort=config' : ''}`, { credentials: 'include' }),
       fetch(`/api/v1/suites/statuses?page=1&pageSize=${resultPageSize}`, { credentials: 'include' }),
     ])
     if (endpointResponse.status === 200) {
@@ -501,6 +503,13 @@ const refreshData = async () => {
   await fetchData()
   refreshing.value = false
 }
+
+// The API returns statuses in config order only when asked to
+watch(sortBy, (value, previous) => {
+  if (value === 'config' || previous === 'config') {
+    fetchData()
+  }
+})
 
 const handleSearch = (query) => {
   searchQuery.value = query

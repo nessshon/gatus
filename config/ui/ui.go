@@ -33,7 +33,7 @@ var (
 	defaultDarkMode = true
 
 	ErrButtonValidationFailed = errors.New("invalid button configuration: missing required name or link")
-	ErrInvalidDefaultSortBy   = errors.New("invalid default-sort-by value: must be 'name', 'group', or 'health'")
+	ErrInvalidDefaultSortBy   = errors.New("invalid default-sort-by value: must be 'name', 'group', 'health', or 'config'")
 	ErrInvalidDefaultFilterBy = errors.New("invalid default-filter-by value: must be 'none', 'failing', or 'unstable'")
 )
 
@@ -50,7 +50,7 @@ type Config struct {
 	Buttons                []Button `yaml:"buttons,omitempty"`                  // Buttons to display below the header
 	CustomCSS              string   `yaml:"custom-css,omitempty"`               // Custom CSS to include in the page
 	DarkMode               *bool    `yaml:"dark-mode,omitempty"`                // DarkMode is a flag to enable dark mode by default
-	DefaultSortBy          string   `yaml:"default-sort-by,omitempty"`          // DefaultSortBy is the default sort option ('name', 'group', 'health')
+	DefaultSortBy          string   `yaml:"default-sort-by,omitempty"`          // DefaultSortBy is the default sort option ('name', 'group', 'health', 'config')
 	DefaultFilterBy        string   `yaml:"default-filter-by,omitempty"`        // DefaultFilterBy is the default filter option ('none', 'failing', 'unstable')
 	LoginSubtitle          string   `yaml:"login-subtitle,omitempty"`           // LoginSubtitle is the subtitle displayed on the OIDC login page
 	Footer                 string   `yaml:"footer,omitempty"`                   // Footer text; empty shows the default "Powered by Gatus"
@@ -152,7 +152,7 @@ func (cfg *Config) ValidateAndSetDefaults() error {
 	}
 	if len(cfg.DefaultSortBy) == 0 {
 		cfg.DefaultSortBy = defaultSortBy
-	} else if cfg.DefaultSortBy != "name" && cfg.DefaultSortBy != "group" && cfg.DefaultSortBy != "health" {
+	} else if cfg.DefaultSortBy != "name" && cfg.DefaultSortBy != "group" && cfg.DefaultSortBy != "health" && cfg.DefaultSortBy != "config" {
 		return ErrInvalidDefaultSortBy
 	}
 	if len(cfg.DefaultFilterBy) == 0 {

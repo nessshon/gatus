@@ -560,7 +560,7 @@ Allows you to configure the application wide defaults for the dashboard's UI. So
 | `ui.buttons[].link`       | Link to open when the button is clicked.                                                                                                 | Required `""`                                       |
 | `ui.custom-css`           | Custom CSS                                                                                                                               | `""`                                                |
 | `ui.dark-mode`            | Whether to enable dark mode by default. Note that this is superseded by the user's operating system theme preferences.                   | `true`                                              |
-| `ui.default-sort-by`      | Default sorting option for endpoints in the dashboard. Can be `name`, `group`, or `health`. Note that user preferences override this.    | `name`                                              |
+| `ui.default-sort-by`      | Default sorting option for endpoints in the dashboard. Can be `name`, `group`, `health`, or `config`. User preferences override this.    | `name`                                              |
 | `ui.default-filter-by`    | Default filter option for endpoints in the dashboard. Can be `none`, `failing`, or `unstable`. Note that user preferences override this. | `none`                                              |
 | `ui.login-subtitle`       | Subtitle displayed on the OIDC login page.                                                                                               | `System Monitoring Dashboard`                       |
 
@@ -3575,6 +3575,10 @@ ui:
 ```
 Note that if a user has already sorted the dashboard by a different field, the default sort will not be applied unless the user
 clears their browser's localstorage.
+
+To group the dashboard but keep the groups and endpoints in the order of the configuration, set it to `config` instead.
+When the configuration is a directory, its files are read in lexical order, so prefix them (e.g. `01-apps.yaml`,
+`02-ton.yaml`) to choose the order of their groups.
 
 
 ### Exposing Gatus on a custom path

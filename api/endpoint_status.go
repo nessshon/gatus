@@ -1,10 +1,12 @@
 package api
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 
 	"github.com/TwiN/gatus/v5/client"
 	"github.com/TwiN/gatus/v5/config"
@@ -22,7 +24,9 @@ import (
 func EndpointStatuses(cfg *config.Config) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		page, pageSize := extractPageAndPageSizeFromRequest(c, cfg.Storage.MaximumNumberOfResults)
-		value, exists := cache.Get(fmt.Sprintf("endpoint-status-%d-%d", page, pageSize))
+		inConfigOrder := c.Query("sort") == "config"
+		cacheKey := fmt.Sprintf("endpoint-status-%d-%d-%t", page, pageSize, inConfigOrder)
+		value, exists := cache.Get(cacheKey)
 		var data []byte
 		if !exists {
 			endpointStatuses, err := store.Get().GetAllEndpointStatuses(paging.NewEndpointStatusParams().WithResults(page, pageSize))
@@ -36,19 +40,44 @@ func EndpointStatuses(cfg *config.Config) fiber.Handler {
 			} else if endpointStatusesFromRemote != nil {
 				endpointStatuses = append(endpointStatuses, endpointStatusesFromRemote...)
 			}
+			if inConfigOrder {
+				sortByConfigOrder(cfg, endpointStatuses)
+			}
 			// Marshal endpoint statuses to JSON
 			data, err = json.Marshal(endpointStatuses)
 			if err != nil {
 				logr.Errorf("[api.EndpointStatuses] Unable to marshal object to JSON: %s", err.Error())
 				return c.Status(500).SendString("unable to marshal object to JSON")
 			}
-			cache.SetWithTTL(fmt.Sprintf("endpoint-status-%d-%d", page, pageSize), data, cacheTTL)
+			cache.SetWithTTL(cacheKey, data, cacheTTL)
 		} else {
 			data = value.([]byte)
 		}
 		c.Set("Content-Type", "application/json")
 		return c.Status(200).Send(data)
 	}
+}
+
+// sortByConfigOrder orders statuses like the endpoints and external endpoints in the configuration.
+// The store returns them sorted by key; statuses the configuration does not know, such as those of
+// remote instances, keep their order at the end.
+func sortByConfigOrder(cfg *config.Config, statuses []*endpoint.Status) {
+	positions := make(map[string]int, len(cfg.Endpoints)+len(cfg.ExternalEndpoints))
+	for _, ep := range cfg.Endpoints {
+		positions[ep.Key()] = len(positions)
+	}
+	for _, ee := range cfg.ExternalEndpoints {
+		positions[ee.Key()] = len(positions)
+	}
+	position := func(status *endpoint.Status) int {
+		if p, ok := positions[status.Key]; ok {
+			return p
+		}
+		return len(positions)
+	}
+	slices.SortStableFunc(statuses, func(a, b *endpoint.Status) int {
+		return cmp.Compare(position(a), position(b))
+	})
 }
 
 func getEndpointStatusesFromRemoteInstances(remoteConfig *remote.Config) ([]*endpoint.Status, error) {

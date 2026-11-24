@@ -1,9 +1,11 @@
 package api
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -227,5 +229,60 @@ func TestEndpointStatuses(t *testing.T) {
 				t.Errorf("expected:\n %s\n\ngot:\n %s", scenario.ExpectedBody, string(body))
 			}
 		})
+	}
+}
+
+func TestEndpointStatuses_InConfigOrder(t *testing.T) {
+	defer store.Get().Clear()
+	defer cache.Clear()
+	first := &endpoint.Endpoint{Name: "storage", Group: "ton"}
+	second := &endpoint.Endpoint{Name: "frontend", Group: "apps"}
+	store.Get().InsertEndpointResult(first, &testSuccessfulResult)
+	store.Get().InsertEndpointResult(second, &testSuccessfulResult)
+	api := New(&config.Config{
+		Endpoints: []*endpoint.Endpoint{first, second},
+		Storage: &storage.Config{
+			MaximumNumberOfResults: storage.DefaultMaximumNumberOfResults,
+			MaximumNumberOfEvents:  storage.DefaultMaximumNumberOfEvents,
+		},
+	})
+	router := api.Router()
+	for path, expectedKeys := range map[string][]string{
+		"/api/v1/endpoints/statuses":             {"apps_frontend", "ton_storage"},
+		"/api/v1/endpoints/statuses?sort=config": {"ton_storage", "apps_frontend"},
+	} {
+		response, err := router.Test(httptest.NewRequest("GET", path, http.NoBody))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var statuses []*endpoint.Status
+		if err = json.NewDecoder(response.Body).Decode(&statuses); err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		var keys []string
+		for _, status := range statuses {
+			keys = append(keys, status.Key)
+		}
+		if !slices.Equal(keys, expectedKeys) {
+			t.Errorf("%s: expected %v, got %v", path, expectedKeys, keys)
+		}
+	}
+}
+
+func TestSortByConfigOrder(t *testing.T) {
+	cfg := &config.Config{
+		Endpoints:         []*endpoint.Endpoint{{Name: "storage", Group: "ton"}, {Name: "frontend", Group: "apps"}},
+		ExternalEndpoints: []*endpoint.ExternalEndpoint{{Name: "bot", Group: "bots"}},
+	}
+	statuses := []*endpoint.Status{{Key: "apps_frontend"}, {Key: "remote_one"}, {Key: "bots_bot"}, {Key: "ton_storage"}, {Key: "remote_two"}}
+	sortByConfigOrder(cfg, statuses)
+	var keys []string
+	for _, status := range statuses {
+		keys = append(keys, status.Key)
+	}
+	expected := []string{"ton_storage", "apps_frontend", "bots_bot", "remote_one", "remote_two"}
+	if !slices.Equal(keys, expected) {
+		t.Errorf("expected %v, got %v", expected, keys)
 	}
 }

@@ -20,7 +20,7 @@ func SinglePageApplication(cfg *config.Config) fiber.Handler {
 	configuredCount := len(cfg.Endpoints) + len(cfg.ExternalEndpoints)
 	return func(c *fiber.Ctx) error {
 		vd := ui.ViewData{UI: uiConfig, OIDC: hasOIDC, PlaceholderCount: configuredCount}
-		if placeholders, err := getPlaceholders(); err != nil {
+		if placeholders, err := getPlaceholders(cfg); err != nil {
 			logr.Errorf("[api.SinglePageApplication] Failed to retrieve placeholders, falling back on the configured endpoint count: %s", err.Error())
 		} else {
 			vd.PlaceholderCount = len(placeholders)
@@ -56,13 +56,16 @@ func SinglePageApplication(cfg *config.Config) fiber.Handler {
 }
 
 // From the store: an external endpoint has no status until its first push
-func getPlaceholders() ([]ui.Placeholder, error) {
+func getPlaceholders(cfg *config.Config) ([]ui.Placeholder, error) {
 	if value, exists := cache.Get("placeholders"); exists {
 		return value.([]ui.Placeholder), nil
 	}
 	endpointStatuses, err := store.Get().GetAllEndpointStatuses(paging.NewEndpointStatusParams())
 	if err != nil {
 		return nil, err
+	}
+	if cfg.UI.DefaultSortBy == "config" {
+		sortByConfigOrder(cfg, endpointStatuses)
 	}
 	placeholders := make([]ui.Placeholder, 0, len(endpointStatuses))
 	for _, endpointStatus := range endpointStatuses {

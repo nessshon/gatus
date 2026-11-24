@@ -129,6 +129,7 @@ Have any feedback or questions? [Create a discussion](https://github.com/TwiN/ga
   - [Monitoring an endpoint using SSH](#monitoring-an-endpoint-using-ssh)
   - [Monitoring an endpoint using STARTTLS](#monitoring-an-endpoint-using-starttls)
   - [Monitoring an endpoint using TLS](#monitoring-an-endpoint-using-tls)
+  - [Monitoring a TON service over ADNL](#monitoring-a-ton-service-over-adnl)
   - [Monitoring domain expiration](#monitoring-domain-expiration)
   - [Concurrency](#concurrency)
   - [Reloading configuration on the fly](#reloading-configuration-on-the-fly)
@@ -264,6 +265,7 @@ If you want to test it locally, see [Docker](#docker).
 | `web`                        | [Web configuration](#web).                                                                                                               | `{}`          |
 | `ui`                         | [UI configuration](#ui).                                                                                                                 | `{}`          |
 | `maintenance`                | [Maintenance configuration](#maintenance).                                                                                               | `{}`          |
+| `ton`                        | Global configs of TON networks. <br />See [Monitoring a TON service over ADNL](#monitoring-a-ton-service-over-adnl).                     | `{}`          |
 
 If you want more verbose logging, you may set the `GATUS_LOG_LEVEL` environment variable to `DEBUG`.
 Conversely, if you want less verbose logging, you can set the aforementioned environment variable to `WARN`, `ERROR` or `FATAL`.
@@ -293,6 +295,8 @@ You can then configure alerts to be triggered when an endpoint is unhealthy once
 | `endpoints[].ssh`                               | Configuration for an endpoint of type SSH. <br />See [Monitoring an endpoint using SSH](#monitoring-an-endpoint-using-ssh).                 | `""`                       |
 | `endpoints[].ssh.username`                      | SSH username (e.g. example).                                                                                                                | Required `""`              |
 | `endpoints[].ssh.password`                      | SSH password (e.g. password).                                                                                                               | Required `""`              |
+| `endpoints[].ton`                               | Configuration for an endpoint of type TON. <br />See [Monitoring a TON service over ADNL](#monitoring-a-ton-service-over-adnl).             | `{}`                       |
+| `endpoints[].ton.network`                       | TON network, `mainnet` or `testnet`.                                                                                                        | `mainnet`                  |
 | `endpoints[].alerts`                            | List of all alerts for a given endpoint. <br />See [Alerting](#alerting).                                                                   | `[]`                       |
 | `endpoints[].maintenance-windows`               | List of all maintenance windows for a given endpoint. <br />See [Maintenance](#maintenance).                                                | `[]`                       |
 | `endpoints[].client`                            | [Client configuration](#client-configuration).                                                                                              | `{}`                       |
@@ -3360,6 +3364,88 @@ If `endpoints[].body` is set then it is sent and the first 1024 bytes of the res
 
 Placeholder `[STATUS]` as well as the fields `endpoints[].headers`,
 `endpoints[].method` and `endpoints[].graphql` are not supported for TLS endpoints.
+
+
+### Monitoring a TON service over ADNL
+You can monitor services of The Open Network that speak ADNL over UDP by prefixing `endpoints[].url` with
+`ton-<service>://` followed by the key the service is published under in the DHT. Gatus finds the address in the DHT,
+pings the peer over ADNL and then asks the service itself.
+
+| Service        | URL                                      | Key                                    | Service query                                                                                                    |
+|:---------------|:-----------------------------------------|:---------------------------------------|:-----------------------------------------------------------------------------------------------------------------|
+| `ton-adnl`     | `ton-adnl://<adnl id>`                   | ADNL id                                | None, the ADNL ping only                                                                                         |
+| `ton-storage`  | `ton-storage://<adnl id>[?bag=<bag id>]` | ADNL id of tonutils-storage            | Peers of an overlay. Without `bag`, a random overlay that a running storage answers with "not found"; with `bag`, the overlay of that bag, which must be active |
+| `ton-provider` | `ton-provider://<provider key>`          | Public key of tonutils-storage-provider | Storage rates                                                                                                    |
+
+Keys are 64 hex characters. To skip the DHT, name the peer directly: `ton-storage://<public key>@<ip>:<port>`.
+
+```yaml
+ton:
+  config:
+    testnet: /etc/gatus/testnet-global.config.json  # URL or path; networks left out use the official global config
+
+endpoints:
+  - name: storage
+    url: "ton-storage://<adnl id>"
+    interval: 1m
+    client:
+      timeout: 40s
+    conditions:
+      - "[BODY].state == ok"
+      - "[RESPONSE_TIME] < 1500"
+
+  - name: provider
+    url: "ton-provider://<provider key>"
+    interval: 1m
+    client:
+      timeout: 40s
+    conditions:
+      - "[BODY].state == ok"
+      - "[BODY].available == true"
+
+  - name: storage-testnet
+    url: "ton-storage://<adnl id>"
+    ton:
+      network: testnet
+    client:
+      timeout: 40s
+    conditions:
+      - "[BODY].state == ok"
+```
+
+The check stops at the first step that fails, and `[BODY].state` tells which one:
+
+| State           | Meaning                                                                                  |
+|:----------------|:-----------------------------------------------------------------------------------------|
+| `client_error`  | Gatus could not check: the global config did not load, or no DHT node answers            |
+| `dht_timeout`   | The DHT lookup did not finish within the timeout                                         |
+| `dht_not_found` | The DHT lookup asked every node it found and none has the record                         |
+| `no_address`    | The record has no address Gatus can dial                                                 |
+| `no_ping`       | The peer did not answer the ADNL ping                                                    |
+| `no_service`    | The peer answered the ping, but not the service query                                    |
+| `service_error` | The service answered with an error, e.g. `storage is not yet initialized` or `not found` for a bag |
+| `ok`            | The service answered as expected                                                         |
+
+`[CONNECTED]` is `true` once the peer answered the ping. `[RESPONSE_TIME]` is the service query, or the ping for
+`ton-adnl`; when the check fails, it is the time of the whole check, DHT lookup included. Besides `state`, the body has `network`, `address`, `dht` (`cache` or `lookup`), `dht_age_s`, `dht_ms`,
+`ping_ms`, `service_ms` and `error`; `ton-provider` adds `available`, `min_span` and `max_span`.
+
+Notes:
+- Keep `[BODY].state == ok` in the conditions: the outcome of a check is decided by its conditions, so without it a
+  failed DHT lookup does not mark the endpoint as unhealthy.
+- The ping and the service query wait up to 3 seconds each, and `client.timeout` bounds the whole check, DHT lookup
+  included. A service that answers later than 3 seconds is reported as `no_service`, so a `[RESPONSE_TIME]` condition
+  only matters below that.
+- A found address is reused for up to 5 minutes. If the peer stops answering at a cached address, the address is looked
+  up again within the same check.
+- A missing record is reported as `dht_not_found` only once the lookup runs out of nodes, which took 25 to 30 seconds on
+  mainnet. That is why the examples use `client.timeout: 40s`; with a shorter timeout it shows up as `dht_timeout`.
+- The DHT client cannot tell a missing record from nodes that did not answer, so `dht_not_found` can also mean that
+  every node it asked was unreachable.
+- The ADNL ping is answered by services built on tonutils-go. Nodes of the C++ implementation do not answer it.
+- Placeholders `[STATUS]`, `[IP]` and `[CERTIFICATE_EXPIRATION]` as well as the fields `endpoints[].headers`,
+  `endpoints[].method` and `endpoints[].body` are not supported for TON endpoints. Of the
+  [client configuration](#client-configuration), only `timeout` applies.
 
 
 ### Monitoring domain expiration

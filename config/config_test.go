@@ -2647,3 +2647,66 @@ func TestResolveTunnelForClientConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestParseAndValidateConfigBytesWithTON(t *testing.T) {
+	config, err := parseAndValidateConfigBytes([]byte(`
+ton:
+  config:
+    testnet: /etc/gatus/testnet-global.config.json
+endpoints:
+  - name: storage
+    url: "ton-storage://50d858e0985ecc7f60418aaf0cc5ab587f42c2570a884095a9e8ccacd0f6545c"
+    conditions:
+      - "[BODY].state == ok"
+suites:
+  - name: suite
+    endpoints:
+      - name: storage-test
+        url: "ton-storage://50d858e0985ecc7f60418aaf0cc5ab587f42c2570a884095a9e8ccacd0f6545c"
+        ton:
+          network: testnet
+        conditions:
+          - "[BODY].state == ok"
+`))
+	if err != nil {
+		t.Fatal("expected no error, got", err)
+	}
+	if network := config.Endpoints[0].TONConfig.ResolvedNetwork; network == nil || network.Name() != "mainnet" {
+		t.Error("expected the endpoint to use the mainnet client")
+	}
+	if network := config.Suites[0].Endpoints[0].TONConfig.ResolvedNetwork; network == nil || network.Name() != "testnet" {
+		t.Error("expected the suite endpoint to use the testnet client")
+	}
+}
+
+func TestParseAndValidateConfigBytesWithoutTON(t *testing.T) {
+	config, err := parseAndValidateConfigBytes([]byte(`
+endpoints:
+  - name: website
+    url: https://example.org
+    conditions:
+      - "[STATUS] == 200"
+`))
+	if err != nil {
+		t.Fatal("expected no error, got", err)
+	}
+	if config.TON != nil {
+		t.Error("expected no TON configuration without TON endpoints")
+	}
+}
+
+func TestParseAndValidateConfigBytesWithInvalidTONNetwork(t *testing.T) {
+	_, err := parseAndValidateConfigBytes([]byte(`
+ton:
+  config:
+    devnet: https://example.org/devnet.json
+endpoints:
+  - name: storage
+    url: "ton-storage://50d858e0985ecc7f60418aaf0cc5ab587f42c2570a884095a9e8ccacd0f6545c"
+    conditions:
+      - "[BODY].state == ok"
+`))
+	if err == nil {
+		t.Error("expected an error for an unknown network in ton.config")
+	}
+}

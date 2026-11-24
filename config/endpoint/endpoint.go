@@ -19,8 +19,10 @@ import (
 
 	"github.com/TwiN/gatus/v5/alerting/alert"
 	"github.com/TwiN/gatus/v5/client"
+	tonclient "github.com/TwiN/gatus/v5/client/ton"
 	"github.com/TwiN/gatus/v5/config/endpoint/dns"
 	sshconfig "github.com/TwiN/gatus/v5/config/endpoint/ssh"
+	tonconfig "github.com/TwiN/gatus/v5/config/endpoint/ton"
 	"github.com/TwiN/gatus/v5/config/endpoint/ui"
 	"github.com/TwiN/gatus/v5/config/gontext"
 	"github.com/TwiN/gatus/v5/config/key"
@@ -54,6 +56,7 @@ const (
 	TypeGRPC     Type = "GRPC"
 	TypeWS       Type = "WEBSOCKET"
 	TypeSSH      Type = "SSH"
+	TypeTON      Type = "TON"
 	TypeUNKNOWN  Type = "UNKNOWN"
 )
 
@@ -79,6 +82,9 @@ var (
 	// This is because the free whois service we are using should not be abused, especially considering the fact that
 	// the data takes a while to be updated.
 	ErrInvalidEndpointIntervalForDomainExpirationPlaceholder = errors.New("the minimum interval for an endpoint with a condition using the " + DomainExpirationPlaceholder + " placeholder is 300s (5m)")
+
+	// ErrTONConfigWithoutTONURL is the error with which Gatus will panic if an endpoint has a ton block but no ton-<service>:// url
+	ErrTONConfigWithoutTONURL = errors.New("the ton configuration can only be used with a ton-<service>:// url")
 )
 
 // Endpoint is the configuration of a service to be monitored
@@ -127,6 +133,9 @@ type Endpoint struct {
 
 	// SSH is the configuration for SSH monitoring
 	SSHConfig *sshconfig.Config `yaml:"ssh,omitempty"`
+
+	// TONConfig is the configuration for TON monitoring
+	TONConfig *tonconfig.Config `yaml:"ton,omitempty"`
 
 	// ClientConfig is the configuration of the client used to communicate with the endpoint's target
 	ClientConfig *client.Config `yaml:"client,omitempty"`
@@ -189,6 +198,8 @@ func (e *Endpoint) Type() Type {
 		return TypeWS
 	case strings.HasPrefix(e.URL, "ssh://"):
 		return TypeSSH
+	case strings.HasPrefix(e.URL, "ton-"):
+		return TypeTON
 	default:
 		return TypeUNKNOWN
 	}
@@ -249,6 +260,19 @@ func (e *Endpoint) ValidateAndSetDefaults() error {
 		if err := maintenanceWindow.ValidateAndSetDefaults(); err != nil {
 			return err
 		}
+	}
+	if e.Type() == TypeTON {
+		if e.TONConfig == nil {
+			e.TONConfig = &tonconfig.Config{}
+		}
+		if err := e.TONConfig.ValidateAndSetDefaults(); err != nil {
+			return err
+		}
+		_, err := tonclient.ParseTarget(e.URL)
+		return err
+	}
+	if e.TONConfig != nil {
+		return ErrTONConfigWithoutTONURL
 	}
 	if e.DNSConfig != nil {
 		return e.DNSConfig.ValidateAndSetDefault()
@@ -541,6 +565,18 @@ func (e *Endpoint) call(result *Result) {
 		result.Duration = duration
 		if e.needsToReadBody() {
 			result.Body = []byte(fmt.Sprintf("{\"status\":\"%s\"}", status))
+		}
+	} else if endpointType == TypeTON {
+		probe := tonclient.Probe(e.URL, e.TONConfig.ResolvedNetwork, e.ClientConfig.Timeout)
+		result.Connected = probe.Connected()
+		result.Duration = probe.Duration()
+		if probe.Error != "" {
+			result.AddError(string(probe.State) + ": " + probe.Error)
+		}
+		if e.needsToReadBody() {
+			if result.Body, err = json.Marshal(probe); err != nil {
+				result.AddError(err.Error())
+			}
 		}
 	} else {
 		response, err = client.GetHTTPClient(e.ClientConfig).Do(request)

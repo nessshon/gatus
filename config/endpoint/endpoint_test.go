@@ -15,6 +15,7 @@ import (
 	"github.com/TwiN/gatus/v5/client"
 	"github.com/TwiN/gatus/v5/config/endpoint/dns"
 	"github.com/TwiN/gatus/v5/config/endpoint/ssh"
+	tonconfig "github.com/TwiN/gatus/v5/config/endpoint/ton"
 	"github.com/TwiN/gatus/v5/config/endpoint/ui"
 	"github.com/TwiN/gatus/v5/config/gontext"
 	"github.com/TwiN/gatus/v5/config/maintenance"
@@ -415,6 +416,12 @@ func TestEndpoint_Type(t *testing.T) {
 		},
 		{
 			args: args{
+				URL: "ton-storage://50d858e0985ecc7f60418aaf0cc5ab587f42c2570a884095a9e8ccacd0f6545c",
+			},
+			want: TypeTON,
+		},
+		{
+			args: args{
 				URL: "invalid://example.org",
 			},
 			want: TypeUNKNOWN,
@@ -552,6 +559,46 @@ func TestEndpoint_ValidateAndSetDefaultsWithDNS(t *testing.T) {
 	}
 	if endpoint.DNSConfig.QueryName != "example.com." {
 		t.Error("Endpoint.dns.query-name should be formatted with . suffix")
+	}
+}
+
+func TestEndpoint_ValidateAndSetDefaultsWithTON(t *testing.T) {
+	const storageURL = "ton-storage://50d858e0985ecc7f60418aaf0cc5ab587f42c2570a884095a9e8ccacd0f6545c"
+	scenarios := []struct {
+		name        string
+		url         string
+		ton         *tonconfig.Config
+		wantNetwork string
+		wantErr     bool
+	}{
+		{name: "defaults to mainnet", url: storageURL, wantNetwork: "mainnet"},
+		{name: "testnet", url: storageURL, ton: &tonconfig.Config{Network: "testnet"}, wantNetwork: "testnet"},
+		{name: "unknown network", url: storageURL, ton: &tonconfig.Config{Network: "devnet"}, wantErr: true},
+		{name: "invalid target", url: "ton-storage://abcd", wantErr: true},
+		{name: "ton block on http endpoint", url: "https://example.com", ton: &tonconfig.Config{}, wantErr: true},
+	}
+	for _, scenario := range scenarios {
+		t.Run(scenario.name, func(t *testing.T) {
+			endpoint := &Endpoint{
+				Name:       "ton-test",
+				URL:        scenario.url,
+				TONConfig:  scenario.ton,
+				Conditions: []Condition{"[BODY].state == ok"},
+			}
+			err := endpoint.ValidateAndSetDefaults()
+			if scenario.wantErr {
+				if err == nil {
+					t.Fatal("expected an error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("did not expect an error, got %v", err)
+			}
+			if endpoint.TONConfig.Network != scenario.wantNetwork {
+				t.Errorf("expected network %s, got %s", scenario.wantNetwork, endpoint.TONConfig.Network)
+			}
+		})
 	}
 }
 

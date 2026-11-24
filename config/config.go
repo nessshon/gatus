@@ -23,6 +23,7 @@ import (
 	"github.com/TwiN/gatus/v5/config/maintenance"
 	"github.com/TwiN/gatus/v5/config/remote"
 	"github.com/TwiN/gatus/v5/config/suite"
+	"github.com/TwiN/gatus/v5/config/ton"
 	"github.com/TwiN/gatus/v5/config/tunneling"
 	"github.com/TwiN/gatus/v5/config/ui"
 	"github.com/TwiN/gatus/v5/config/web"
@@ -119,6 +120,9 @@ type Config struct {
 
 	// Tunneling is the configuration for SSH tunneling
 	Tunneling *tunneling.Config `yaml:"tunneling,omitempty"`
+
+	// TON is the shared configuration of TON endpoints
+	TON *ton.Config `yaml:"ton,omitempty"`
 
 	// Announcements is the list of system-wide announcements
 	Announcements []*announcement.Announcement `yaml:"announcements,omitempty"`
@@ -335,6 +339,9 @@ func parseAndValidateConfigBytes(yamlBytes []byte) (config *Config, err error) {
 		if err := ValidateSuitesConfig(config); err != nil {
 			return nil, err
 		}
+		if err := ValidateTONConfig(config); err != nil {
+			return nil, err
+		}
 		if err := ValidateUniqueKeys(config); err != nil {
 			return nil, err
 		}
@@ -375,6 +382,37 @@ func ValidateTunnelingConfig(config *Config) error {
 			}
 		}
 		// TODO: Add tunnel support for alert providers when needed
+	}
+	return nil
+}
+
+// ValidateTONConfig validates the TON configuration and gives each TON endpoint the client of its network
+// NOTE: This must be called after ValidateEndpointsConfig and ValidateSuitesConfig, which set the network of each endpoint
+func ValidateTONConfig(config *Config) error {
+	var tonEndpoints []*endpoint.Endpoint
+	for _, ep := range config.Endpoints {
+		if ep.Type() == endpoint.TypeTON {
+			tonEndpoints = append(tonEndpoints, ep)
+		}
+	}
+	for _, s := range config.Suites {
+		for _, ep := range s.Endpoints {
+			if ep.Type() == endpoint.TypeTON {
+				tonEndpoints = append(tonEndpoints, ep)
+			}
+		}
+	}
+	if config.TON == nil {
+		if len(tonEndpoints) == 0 {
+			return nil
+		}
+		config.TON = &ton.Config{}
+	}
+	if err := config.TON.ValidateAndSetDefaults(); err != nil {
+		return err
+	}
+	for _, ep := range tonEndpoints {
+		ep.TONConfig.ResolvedNetwork = config.TON.Network(ep.TONConfig.Network)
 	}
 	return nil
 }

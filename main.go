@@ -60,6 +60,9 @@ func stop(cfg *config.Config) {
 	controller.Shutdown()
 	metrics.UnregisterPrometheusMetrics()
 	closeTunnels(cfg)
+	if cfg.TON != nil {
+		cfg.TON.Close()
+	}
 }
 
 func save() {

@@ -175,6 +175,15 @@ func TestAlertProvider_buildMessageText(t *testing.T) {
 			ExpectedText: "🔴 <b>bots</b> / <b>demo-bot</b>\n\n<i>healthcheck failed 2 time(s) in a row</i>\n\n<b>Condition results:</b>\n• <code>[CONNECTED] (false) == true</code>",
 		},
 		{
+			Name:         "non-http url: name is bold, not a link",
+			Config:       Config{ID: "123"},
+			Endpoint:     endpoint.Endpoint{Name: "storage", Group: "ton", URL: "ton-storage://50d858e0985ecc7f60418aaf0cc5ab587f42c2570a884095a9e8ccacd0f6545c"},
+			Alert:        alert.Alert{FailureThreshold: 6},
+			Conditions:   []*endpoint.ConditionResult{{Condition: "[BODY].state (no_ping) == ok", Success: false}},
+			Resolved:     false,
+			ExpectedText: "🔴 <b>ton</b> / <b>storage</b>\n\n<i>healthcheck failed 6 time(s) in a row</i>\n\n<b>Condition results:</b>\n• <code>[BODY].state (no_ping) == ok</code>",
+		},
+		{
 			Name:     "html-unsafe condition + url are escaped so the alert can't be dropped",
 			Config:   Config{ID: "123"},
 			Endpoint: endpoint.Endpoint{Name: "frontend", Group: "core", URL: "https://example.org/?a=1&b=2"},

@@ -258,7 +258,8 @@ func buildMessageText(cfg *Config, ep *endpoint.Endpoint, alert *alert.Alert, re
 		b.WriteString(html.EscapeString(ep.Group))
 		b.WriteString("</b> / ")
 	}
-	if ep.URL != "" {
+	// Telegram drops links with schemes it does not know, such as ton-storage://, and shows the name as plain text
+	if strings.HasPrefix(ep.URL, "http://") || strings.HasPrefix(ep.URL, "https://") {
 		b.WriteString(`<a href="`)
 		b.WriteString(html.EscapeString(ep.URL))
 		b.WriteString(`">`)

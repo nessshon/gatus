@@ -128,6 +128,7 @@ type Config struct {
 	Announcements []*announcement.Announcement `yaml:"announcements,omitempty"`
 
 	configPath      string    // path to the file or directory from which config was loaded
+	configFiles     []string  // files read from configPath when it is a directory; a removed file changes no mod time
 	lastFileModTime time.Time // last modification time
 }
 
@@ -182,13 +183,15 @@ func (config *Config) HasLoadedConfigurationBeenModified() bool {
 		return false
 	}
 	if fileInfo.IsDir() {
+		var files []string
 		err = walkConfigDir(config.configPath, func(path string, d fs.DirEntry, err error) error {
+			files = append(files, path)
 			if info, err := d.Info(); err == nil && lastMod < info.ModTime().Unix() {
 				return errEarlyReturn
 			}
 			return nil
 		})
-		return errors.Is(err, errEarlyReturn)
+		return errors.Is(err, errEarlyReturn) || !slices.Equal(files, config.configFiles)
 	}
 	return !fileInfo.ModTime().IsZero() && config.lastFileModTime.Unix() < fileInfo.ModTime().Unix()
 }
@@ -221,11 +224,13 @@ func LoadConfiguration(configPath string) (*Config, error) {
 		return nil, ErrConfigFileNotFound
 	}
 	var config *Config
+	var configFiles []string
 	if fileInfo.IsDir() {
 		err := walkConfigDir(configPath, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return fmt.Errorf("error walking path %s: %w", path, err)
 			}
+			configFiles = append(configFiles, path)
 			if strings.Contains(path, "..") {
 				logr.Warnf("[config.LoadConfiguration] Ignoring configuration from %s", path)
 				return nil
@@ -257,6 +262,7 @@ func LoadConfiguration(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("error parsing config: %w", err)
 	}
 	config.configPath = usedConfigPath
+	config.configFiles = configFiles
 	config.UpdateLastFileModTime()
 	return config, nil
 }

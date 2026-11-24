@@ -359,6 +359,33 @@ func TestConfig_HasLoadedConfigurationBeenModified(t *testing.T) {
 			t.Errorf("expected config.HasLoadedConfigurationBeenModified() to return true because a new file has been added in the directory")
 		}
 	})
+	t.Run("config-file-removed-from-config-directory", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(`endpoints:
+  - name: website
+    url: https://twin.sh/health
+    conditions:
+      - "[STATUS] == 200"
+`), 0o644); err != nil {
+			t.Fatalf("failed to write config file: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "metrics.yaml"), []byte(`metrics: true`), 0o644); err != nil {
+			t.Fatalf("failed to write config file: %v", err)
+		}
+		config, err := LoadConfiguration(dir)
+		if err != nil {
+			t.Fatalf("failed to load configuration: %v", err)
+		}
+		if config.HasLoadedConfigurationBeenModified() {
+			t.Errorf("expected config.HasLoadedConfigurationBeenModified() to return false because nothing has happened since it was created")
+		}
+		if err = os.Remove(filepath.Join(dir, "metrics.yaml")); err != nil {
+			t.Fatalf("failed to remove config file: %v", err)
+		}
+		if !config.HasLoadedConfigurationBeenModified() {
+			t.Errorf("expected config.HasLoadedConfigurationBeenModified() to return true because a file has been removed from the directory")
+		}
+	})
 }
 
 func TestParseAndValidateConfigBytes(t *testing.T) {
